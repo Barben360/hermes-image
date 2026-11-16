@@ -80,6 +80,10 @@ check "signing key owned by hermes, mode 600" \
     x sh -c "test \"\$(stat -c '%U %a' /opt/data/home/.ssh/hermes_signing)\" = 'hermes 600'"
 check "commits are SSH-signed and verify" \
     x sh -c 'd=$(mktemp -d) && cd "$d" && git init -q && git commit -q --allow-empty -m t && git verify-commit HEAD 2>&1 | grep -q "Good \"git\" signature for hermes@bbarrois.tech"'
+for skill in homelab-pr self-merge-image workspace-journal; do
+    check "skill $skill synced into Hermes's skills" \
+        x sh -c "find /opt/data/skills -path '*/$skill/SKILL.md' | grep -q ."
+done
 check "git uses gh as credential helper" \
     x sh -c 'git config --global --get-all credential.https://github.com.helper | grep -qx "!gh auth git-credential"'
 

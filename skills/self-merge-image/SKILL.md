@@ -12,6 +12,8 @@ you within a few minutes: you will be restarted.
 1. Read `AGENTS.md` in the repo: what you may and may not change.
 2. Clone or update `~/hermes-image` (`gh repo clone Barben360/hermes-image` once,
    then `git pull`), create a branch `hermes/<short-topic>`.
+   Use the same conventions as everywhere: branch `hermes/<topic>`, PR title
+   `🤖 Hermes: …`; your commits are signed as Hermes automatically.
 3. Make the change (Dockerfile layer + a check in `ci/smoke.sh` that fails without it).
 4. Commit (emoji + imperative subject), push, `gh pr create` with what and why.
 5. `gh pr checks <n> --watch`. Red: comment the failure on the PR, tell the owner on

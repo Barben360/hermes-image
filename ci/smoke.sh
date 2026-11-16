@@ -70,14 +70,23 @@ check "GH_CONFIG_DIR points at the persistent gh config" \
     x sh -c 'test "$GH_CONFIG_DIR" = /opt/data/home/.config/gh'
 check "hosts.yml owned by hermes, mode 600" \
     x sh -c "test \"\$(stat -c '%U %a' $HOSTS)\" = 'hermes 600'"
-check "hosts.yml holds the bot login and token" \
+check "hosts.yml holds the login and token" \
     x sh -c "grep -q 'user: smoke-bot' $HOSTS && grep -q 'oauth_token: ghp_smoketest' $HOSTS"
-check "gh resolves the bot as the github.com user" \
+check "gh resolves the login as the github.com user" \
     x sh -c 'test "$(gh config get -h github.com user)" = smoke-bot'
+check "git identity is Hermes, not the token's owner" \
+    x sh -c 'test "$(git config --global user.name)" = Hermes && test "$(git config --global user.email)" = hermes@bbarrois.tech'
+check "signing key owned by hermes, mode 600" \
+    x sh -c "test \"\$(stat -c '%U %a' /opt/data/home/.ssh/hermes_signing)\" = 'hermes 600'"
+check "commits are SSH-signed and verify" \
+    x sh -c 'd=$(mktemp -d) && cd "$d" && git init -q && git commit -q --allow-empty -m t && git verify-commit HEAD 2>&1 | grep -q "Good \"git\" signature for hermes@bbarrois.tech"'
 check "git uses gh as credential helper" \
     x sh -c 'git config --global --get-all credential.https://github.com.helper | grep -qx "!gh auth git-credential"'
 
+KEY1=$(docker exec "$NAME" cat /opt/data/home/.ssh/hermes_signing.pub)
 start
 check "hosts.yml removed without a token" x sh -c "! test -e $HOSTS"
+check "signing key kept across restarts" \
+    x sh -c "test -n '$KEY1' && test \"\$(cat /opt/data/home/.ssh/hermes_signing.pub)\" = '$KEY1'"
 
 exit $fail

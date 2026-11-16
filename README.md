@@ -4,9 +4,11 @@ The Hermes Agent image run on morpheus (`services/hermes` in
 https://github.com/Barben360/my-homelab): upstream `nousresearch/hermes-agent`
 (stable releases only) plus:
 
-- `gh` (GitHub CLI), logged in as the bot from `/run/secrets/github_token` +
-  `/run/secrets/github_login` at every start
-  (`rootfs/etc/cont-init.d/50-homelab-credentials`); git uses it as credential helper;
+- `gh` (GitHub CLI), logged in with the owner's fine-grained token from
+  `/run/secrets/github_token` + `/run/secrets/github_login` at every start
+  (`rootfs/etc/cont-init.d/50-homelab-credentials`); git uses it as credential helper,
+  and commits as `Hermes <hermes@bbarrois.tech>`, SSH-signed with a key kept in the volume
+  (its public key is printed in the container log at start);
 - `himalaya` (mail, through protonmail-bridge) and `mcp-grafana` (Grafana MCP server),
   pinned releases checked by sha256.
 

@@ -18,7 +18,10 @@ morpheus: treat every change as a production deploy of yourself.
 - Remove or weaken a check in `ci/smoke.sh`, or `rootfs/etc/cont-init.d/50-homelab-credentials`'s
   rule that a missing token removes `hosts.yml`.
 - Change morpheus itself here: the server configuration lives in Barben360/my-homelab,
-  where you are read-only and propose changes from your fork (skill `homelab-pr`).
+  where you only open issues and PRs from `hermes/*` branches; never push to its `main`,
+  never merge there (skill `homelab-pr`).
+- Change your git identity or signing settings: commits are authored
+  `Hermes <hermes@bbarrois.tech>` and SSH-signed, because your GitHub token is the owner's.
 - Add secrets, tokens or credentials to the repo; add `privileged` features, Docker
   socket access, or anything that needs new capabilities: those belong to
   `services/hermes` in my-homelab, through a PR the owner merges.

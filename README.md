@@ -12,6 +12,9 @@ https://github.com/Barben360/my-homelab): upstream `nousresearch/hermes-agent`
 - `himalaya` (mail, through protonmail-bridge) and `mcp-grafana` (Grafana MCP server),
   pinned releases checked by sha256.
 
+Our skills (`skills/`) are bundled under `/opt/hermes/skills/homelab/`: Hermes syncs them
+into its own skills at every start (it keeps the ones it customized).
+
 Every PR and push to `main` builds the image and runs `ci/smoke.sh`; `main` pushes
 `ghcr.io/barben360/hermes-agent:latest` and `:sha-<12>`. morpheus polls `:latest`
 (policy `poll`) and deploys a new digest within minutes; a failed health check keeps

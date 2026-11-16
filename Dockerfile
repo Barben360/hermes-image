@@ -46,6 +46,11 @@ ENV GH_CONFIG_DIR=/opt/data/home/.config/gh \
 
 COPY rootfs/ /
 
+# Our skills, bundled like upstream's: Hermes syncs them into its skills at
+# every start (new ones copied; unmodified ones updated; ones it customized
+# left alone).
+COPY skills/ /opt/hermes/skills/homelab/
+
 # The git commit this image was built from: Hermes compares it with the PR
 # it merged to confirm its own update went live (skills/self-merge-image).
 ARG IMAGE_REVISION=dev

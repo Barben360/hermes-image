@@ -1,0 +1,41 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "dependencyDashboard": false,
+  "packageRules": [
+    {
+      "description": "Upstream Hermes: stable vX.Y.Z only (no rc, desktop or floating tags); merged once the smoke test passes.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "nousresearch/hermes-agent"
+      ],
+      "allowedVersions": "/^v\\d+\\.\\d+\\.\\d+$/",
+      "pinDigests": true,
+      "automerge": true,
+      "platformAutomerge": true
+    },
+    {
+      "matchManagers": [
+        "github-actions"
+      ],
+      "automerge": true,
+      "platformAutomerge": true
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^Dockerfile$/"
+      ],
+      "matchStrings": [
+        "ARG HERMES_VERSION=(?<currentValue>\\S+)\\nFROM (?<depName>nousresearch/hermes-agent):\\$\\{HERMES_VERSION\\}@(?<currentDigest>sha256:[0-9a-f]{64})"
+      ],
+      "datasourceTemplate": "docker"
+    }
+  ]
+}

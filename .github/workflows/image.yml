@@ -1,0 +1,37 @@
+# Build, smoke-test, then (main only) push ghcr.io/barben360/hermes-agent
+# :latest and :sha-<12>. morpheus polls :latest and deploys a new digest.
+# The job name "image" is the required status check of the main ruleset.
+name: image
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: docker build --build-arg IMAGE_REVISION="$GITHUB_SHA" -t hermes-agent:ci .
+      - name: Smoke test
+        run: ci/smoke.sh hermes-agent:ci
+      - name: Push
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          img=ghcr.io/barben360/hermes-agent
+          sha=$(printf '%.12s' "$GITHUB_SHA")
+          docker tag hermes-agent:ci "$img:latest"
+          docker tag hermes-agent:ci "$img:sha-$sha"
+          docker push "$img:sha-$sha"
+          docker push "$img:latest"

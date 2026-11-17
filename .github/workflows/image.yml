@@ -1,6 +1,13 @@
-# Build, smoke-test, then (main only) push ghcr.io/barben360/hermes-agent
-# :latest and :sha-<12>. morpheus polls :latest and deploys a new digest.
-# The job name "image" is the required status check of the main ruleset.
+# Build and smoke-test every PR and main push (job "image", the required
+# status check of the main ruleset), then, on main only, push
+# ghcr.io/barben360/hermes-agent :latest and :sha-<12>. morpheus polls
+# :latest and deploys a new digest.
+#
+# Two jobs on purpose: the job that runs repository code a PR may change
+# (ci/smoke.sh, the Dockerfile) holds a read-only token. With packages: write
+# there, a same-repo PR could push :latest from its own smoke.sh, without
+# review or merge (review 2026-11-17). Hermes's token has no Workflows
+# permission, so it cannot change this file.
 name: image
 on:
   pull_request:
@@ -16,15 +23,31 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Build
         run: docker build --build-arg IMAGE_REVISION="$GITHUB_SHA" -t hermes-agent:ci .
       - name: Smoke test
         run: ci/smoke.sh hermes-agent:ci
+
+  push:
+    needs: image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # The smoke-tested commit, rebuilt; no repository script runs here and
+      # the token only reaches docker login, after the build.
+      - name: Build
+        run: docker build --build-arg IMAGE_REVISION="$GITHUB_SHA" -t hermes-agent:ci .
       - name: Push
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

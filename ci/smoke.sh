@@ -4,7 +4,8 @@
 # baked tool is missing, or the GitHub credentials contract breaks:
 #   - with /run/secrets/github_token + github_login: gh's hosts.yml exists,
 #     owned by hermes, mode 600, and git uses gh as credential helper;
-#   - restarted without the token: hosts.yml is gone (no stale token).
+#   - restarted without the token: hosts.yml is gone (no stale token);
+#   - symlinks planted in the volume give Hermes no file of the image.
 set -eu
 
 IMAGE=${1:?usage: ci/smoke.sh <image>}
@@ -92,5 +93,23 @@ start
 check "hosts.yml removed without a token" x sh -c "! test -e $HOSTS"
 check "signing key kept across restarts" \
     x sh -c "test -n '$KEY1' && test \"\$(cat /opt/data/home/.ssh/hermes_signing.pub)\" = '$KEY1'"
+
+# Symlink plants (review 2026-11-17): root's start script used to write and
+# chown through names in the volume, handing Hermes any file of the image.
+# After a restart, no image file may have changed owner, mode or content,
+# and the credentials are rebuilt in place of the links.
+x ln -sf /opt/hermes/README.md /opt/data/home/.config/git/allowed_signers.tmp
+x sh -c 'rm -rf /opt/data/home/.config/gh && ln -s /etc/cont-init.d /opt/data/home/.config/gh'
+x sh -c 'rm -f /opt/data/home/.ssh/hermes_signing && ln -s /etc/cont-init.d/01-hermes-setup /opt/data/home/.ssh/hermes_signing'
+image_files() {
+    docker exec "$NAME" sh -c 'stat -c "%n %U %a %s" /opt/hermes/README.md /etc/cont-init.d /etc/cont-init.d/*; md5sum /etc/cont-init.d/*; find /etc/cont-init.d /opt/hermes -maxdepth 1 -user hermes'
+}
+BEFORE=$(image_files)
+start with-token
+check "planted symlinks change no image file" test "$BEFORE" = "$(image_files)"
+check "gh credentials rebuilt in place of the symlinked dir" \
+    x sh -c "test ! -L /opt/data/home/.config/gh && test \"\$(stat -c '%U %a' $HOSTS)\" = 'hermes 600'"
+check "a fresh signing key replaces the symlinked one" \
+    x sh -c 'test ! -L /opt/data/home/.ssh/hermes_signing && test "$(stat -c "%U %a" /opt/data/home/.ssh/hermes_signing)" = "hermes 600"'
 
 exit $fail

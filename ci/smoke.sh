@@ -1,7 +1,7 @@
 #!/bin/sh
 # Smoke test of a Hermes image: ci/smoke.sh <image>
 # Fails (exit 1) when the gateway does not answer /health within 120 s, a
-# baked tool is missing, or the GitHub credentials contract breaks:
+# baked tool or the Bot Screen desktop (-desktop base) is missing, or the GitHub credentials contract breaks:
 #   - with /run/secrets/github_token + github_login: gh's hosts.yml exists,
 #     owned by hermes, mode 600, and git uses gh as credential helper;
 #   - restarted without the token: hosts.yml is gone (no stale token);
@@ -66,6 +66,8 @@ check "himalaya installed" x himalaya --version
 check "mcp-grafana installed" x mcp-grafana --version
 check "rsync installed" x rsync --version
 check "git installed" x git --version
+check "Bot Screen packages (Xvnc, xfwm4, xfce4-panel)" \
+    x sh -c 'command -v Xvnc && command -v xfwm4 && command -v xfce4-panel'
 check "Matrix E2EE module (olm)" x /opt/hermes/.venv/bin/python -c 'import olm, mautrix'
 HOSTS=/opt/data/home/.config/gh/hosts.yml
 check "GH_CONFIG_DIR points at the persistent gh config" \

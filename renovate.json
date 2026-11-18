@@ -6,14 +6,14 @@
   "dependencyDashboard": false,
   "packageRules": [
     {
-      "description": "Upstream Hermes: stable vX.Y.Z only (no rc, desktop or floating tags); merged once the smoke test passes.",
+      "description": "Upstream Hermes: stable vX.Y.Z-desktop only (Bot Screen; no rc, slim or floating tags); merged once the smoke test passes.",
       "matchDatasources": [
         "docker"
       ],
       "matchPackageNames": [
         "nousresearch/hermes-agent"
       ],
-      "allowedVersions": "/^v\\d+\\.\\d+\\.\\d+$/",
+      "allowedVersions": "/^v\\d+\\.\\d+\\.\\d+-desktop$/",
       "pinDigests": true,
       "automerge": true,
       "platformAutomerge": true

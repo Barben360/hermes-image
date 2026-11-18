@@ -1,9 +1,13 @@
 # Hermes Agent for morpheus: the upstream image plus the tools it uses there.
+# Base: the -desktop variant (TigerVNC + Xfce + distro Chromium, ~+235 MB),
+# for Bot Screen: the owner watches Hermes's headed browser from the Webapp
+# and takes over for a login, 2FA or CAPTCHA. Nothing starts at boot: the
+# screen costs memory only while it runs.
 # Stable upstream releases only (Renovate, renovate.json); every build passes
 # ci/smoke.sh before it is pushed. Add a tool: a layer below + a check in
 # ci/smoke.sh, through a PR (AGENTS.md).
-ARG HERMES_VERSION=v0.23.1
-FROM nousresearch/hermes-agent:${HERMES_VERSION}@sha256:276d44685c65c0cb2a25f190b63c65c8906f9dc76486fb1c05ae71b5826bda08
+ARG HERMES_VERSION=v0.23.1-desktop
+FROM nousresearch/hermes-agent:${HERMES_VERSION}@sha256:385725287c207b1517717167d8ac8631e5e7cd2d47a9954df18b6e95b6e5e78b
 
 USER root
 

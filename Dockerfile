@@ -17,6 +17,12 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends gh; \
     rm -rf /var/lib/apt/lists/*
 
+# rsync (used by the workspace-journal skill to mirror skills/ into the repo).
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends rsync; \
+    rm -rf /var/lib/apt/lists/*
+
 # himalaya (mail CLI, used by Hermes's bundled himalaya skill).
 # Bumped by PR (version + sha256 of the release asset): Renovate cannot
 # recompute an asset checksum.

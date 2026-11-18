@@ -64,6 +64,7 @@ x() { docker exec -u hermes "$NAME" "$@"; }
 check "gh installed" x gh --version
 check "himalaya installed" x himalaya --version
 check "mcp-grafana installed" x mcp-grafana --version
+check "rsync installed" x rsync --version
 check "git installed" x git --version
 check "Matrix E2EE module (olm)" x /opt/hermes/.venv/bin/python -c 'import olm, mautrix'
 HOSTS=/opt/data/home/.config/gh/hosts.yml

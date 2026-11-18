@@ -25,7 +25,8 @@ morpheus: treat every change as a production deploy of yourself.
 - Add secrets, tokens or credentials to the repo; add `privileged` features, Docker
   socket access, or anything that needs new capabilities: those belong to
   `services/hermes` in my-homelab, through a PR the owner merges.
-- Use floating base tags, release candidates or `-desktop` variants.
+- Use floating base tags or release candidates, or leave the `-desktop` variant: Bot Screen
+  (the owner's takeover of your browser for logins) needs its desktop packages.
 
 ## Procedure
 

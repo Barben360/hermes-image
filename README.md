@@ -15,6 +15,8 @@ takes over Hermes's browser to sign in) plus:
 
 Our skills (`skills/`) are bundled under `/opt/hermes/skills/homelab/`: Hermes syncs them
 into its own skills at every start (it keeps the ones it customized).
+`tech-radar` also ships a cron script, which `rootfs/etc/cont-init.d/60-homelab-tech-radar`
+installs into `/opt/data/scripts/tech-radar/` at every start (Hermes runs cron scripts only from there).
 
 Every PR and push to `main` builds the image and runs `ci/smoke.sh`; `main` pushes
 `ghcr.io/barben360/hermes-agent:latest` and `:sha-<12>`. morpheus polls `:latest`

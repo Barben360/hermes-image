@@ -18,9 +18,11 @@ tech news…` or `❌ Error generating tech radar (<step>: <reason>)`.
 
 - Its DeepSeek key is the file `/run/secrets/tech_radar_deepseek_key` (my-homelab,
   Proton Pass `tech-radar/deepseek-api-key`). Never print, copy or log it.
-- Run it by hand: `hermes cron run <id>` (or
-  `/opt/hermes/.venv/bin/python $HERMES_HOME/scripts/tech-radar/tech_radar.py`). A rerun the
-  same day rebuilds the day's note.
+- Run it by hand: `/opt/hermes/.venv/bin/python $HERMES_HOME/scripts/tech-radar/tech_radar.py`
+  (writes the note and prints the line, posts nothing). A rerun the same day rebuilds the
+  day's note. Never `hermes cron run` from a shell: that process logs into Matrix itself as
+  device `HERMES_MORPHEUS`, which revokes the gateway's token and stops all Matrix traffic
+  (chats, alerts) until Hermes restarts (2026-11-22).
 - Never turn the job into an agent job or change its model: the whole point is zero agent
   tokens. Changes to the script, feeds or prompts go through a PR in hermes-image
   (`skills/tech-radar/`, tests in `tests/`); the copy in the volume is overwritten at start.

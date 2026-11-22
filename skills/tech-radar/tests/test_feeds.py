@@ -46,6 +46,12 @@ class FeedsTest(unittest.TestCase):
         self.assertEqual(items[0].source, "HN")
         self.assertEqual(items[1].description, "")  # too short to count
 
+    def test_parse_feed_normalizes_titles(self):
+        data = (b'<?xml version="1.0"?><rss version="2.0"><channel><item>'
+                b'<title>  Two\n  lines &lt;b&gt;bold&lt;/b&gt; </title><link>https://example.org/t</link>'
+                b'</item></channel></rss>')
+        self.assertEqual(parse_feed(data, "HN")[0].title, "Two lines bold")
+
     def test_parse_atom_prefers_alternate_link(self):
         items = parse_feed(read_fixture("atom.xml"), "Lobsters")
         self.assertEqual(items[0].link, "https://example.org/alt")

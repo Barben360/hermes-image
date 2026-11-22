@@ -120,7 +120,7 @@ def parse_feed(data: bytes, source: str) -> list[Article]:
             if link_el is None:
                 link_el = entry.find(f"{ATOM_NS}link")
             link = link_el.get("href", "") if link_el is not None else ""
-            title = _text(entry.find(f"{ATOM_NS}title")).strip()
+            title = strip_html(_text(entry.find(f"{ATOM_NS}title")))
             if title and link.strip():
                 items.append(Article(
                     title=title,
@@ -131,7 +131,7 @@ def parse_feed(data: bytes, source: str) -> list[Article]:
                 ))
         return items
     for item in root.iter("item"):
-        title = _text(item.find("title")).strip()
+        title = strip_html(_text(item.find("title")))
         link = _text(item.find("link")).strip()
         if title and link:
             items.append(Article(
@@ -278,20 +278,34 @@ def rank(llm: Llm, interests: str, items: list[Article], top: int = 10) -> list[
         desc = a.description[:RANK_DESC_LIMIT]
         lines.append(f"[{i}] {a.title} ({a.source})" + (f"\n    {desc}" if desc else ""))
     user = f"<Interests>\n{interests.strip()}\n</Interests>\n\n<Articles>\n" + "\n".join(lines) + "\n</Articles>"
-    answer = llm.complete_json(RANK_SYSTEM.format(top=top), user)
+    picked: dict[int, int] = {}
+    for attempt in range(2):  # one retry: JSON mode can return an empty or unusable answer
+        try:
+            picked = _picked(llm.complete_json(RANK_SYSTEM.format(top=top), user), len(items))
+        except LlmError:
+            if attempt:
+                raise
+            continue
+        if picked:
+            break
+    if not picked:
+        raise LlmError("no article selected")
+    order = sorted(picked, key=lambda i: picked[i], reverse=True)  # stable: ties keep the model's order
+    return [items[i] for i in order[:top]]
+
+
+def _picked(answer: dict, count: int) -> dict[int, int]:
+    """Valid selected ids (in range, first occurrence) → score."""
     selected = answer.get("selected")
     picked: dict[int, int] = {}
     for entry in selected if isinstance(selected, list) else []:
         if not isinstance(entry, dict):
             continue
         i = _int(entry.get("id"))
-        if i is None or not 0 <= i < len(items) or i in picked:
+        if i is None or not 0 <= i < count or i in picked:
             continue
         picked[i] = _int(entry.get("score")) or 0
-    if not picked:
-        raise LlmError("no article selected")
-    order = sorted(picked, key=lambda i: picked[i], reverse=True)  # stable: ties keep the model's order
-    return [items[i] for i in order[:top]]
+    return picked
 
 
 # --- Summaries (prompt ported from tech-radar-skill/scripts/summarize_article.py) ---

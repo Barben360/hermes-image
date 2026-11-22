@@ -123,9 +123,11 @@ class RunTest(unittest.TestCase):
         self.assertEqual(set(seen.values()), {"2026-11-22"})
 
     def test_run_rerun_same_day_rebuilds(self):
-        self.assertEqual(self.go(), OK_LINE)
+        # Exactly 10 candidates: if today's links were filtered, the rerun would answer "nothing new".
+        get = lambda url: rss("Hacker News" if url == "https://hn" else "Lobsters", 5)
+        self.assertEqual(self.go(get=get), OK_LINE)
         (self.vault / NOTE).unlink()
-        self.assertEqual(self.go(), OK_LINE)
+        self.assertEqual(self.go(get=get), OK_LINE)
         self.assertTrue((self.vault / NOTE).exists())
 
     def test_run_partial_feed_failure_names_feed(self):

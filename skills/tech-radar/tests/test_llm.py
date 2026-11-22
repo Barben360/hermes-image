@@ -18,11 +18,22 @@ class RankTest(unittest.TestCase):
         llm = FakeLlm([{"selected": [{"id": "1", "score": 9}, {"id": 1, "score": 8}, {"id": 99, "score": 10}, {"id": "x"}]}])
         self.assertEqual([a.title for a in rank(llm, "i", arts(3))], ["t1"])
 
+    def test_rank_retries_once(self):
+        llm = FakeLlm([LlmError("answer is not JSON"), {"selected": [{"id": 2, "score": 9}]}])
+        self.assertEqual([a.title for a in rank(llm, "i", arts(3))], ["t2"])
+        self.assertEqual(len(llm.calls), 2)
+
+    def test_rank_gives_up_after_one_retry(self):
+        llm = FakeLlm([LlmError("a"), {"selected": []}, {"selected": [{"id": 0, "score": 1}]}])
+        with self.assertRaises(LlmError):
+            rank(llm, "i", arts(3))
+        self.assertEqual(len(llm.calls), 2)
+
     def test_rank_nothing_valid_raises(self):
         with self.assertRaises(LlmError):
-            rank(FakeLlm([{"selected": []}]), "i", arts(3))
+            rank(FakeLlm([{"selected": []}, {"selected": []}]), "i", arts(3))
         with self.assertRaises(LlmError):
-            rank(FakeLlm([{"other": 1}]), "i", arts(3))
+            rank(FakeLlm([{"other": 1}, {"selected": [{"id": 99}]}]), "i", arts(3))
 
     def test_rank_prompt_holds_interests_and_cut_descriptions(self):
         llm = FakeLlm([{"selected": [{"id": 0, "score": 5}]}])

@@ -24,5 +24,16 @@ tech news…` or `❌ Error generating tech radar (<step>: <reason>)`.
 - Never turn the job into an agent job or change its model: the whole point is zero agent
   tokens. Changes to the script, feeds or prompts go through a PR in hermes-image
   (`skills/tech-radar/`, tests in `tests/`); the copy in the volume is overwritten at start.
+- Create (or recreate) the job, once, from a shell in the container (`cd /opt/data` first);
+  check the flags with `hermes cron create --help`:
+
+  ```sh
+  hermes cron create '0 7 * * *' --name tech-radar --script tech-radar/tech_radar.py --no-agent \
+    --interpreter /opt/hermes/.venv/bin/python --timezone Europe/Paris --catch-up on \
+    --deliver 'matrix:!PD7fJIs5meRecg5sKAMY7Mpg1uNizVELoglwQeqMn5w'
+  ```
+
+  (`💬 Général`). Then check its record in `$HERMES_HOME/cron/jobs.json`: `no_agent: true`,
+  `script: tech-radar/tech_radar.py`, no prompt, no skill, no model.
 - A run that never happens (Hermes down past the catch-up window, job paused) sends nothing:
   if the owner says the morning line is missing, check `hermes cron list` and the job's last run.

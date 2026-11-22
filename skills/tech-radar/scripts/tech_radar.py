@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Protocol
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
@@ -204,3 +204,148 @@ def write_atomic(path: Path, text: str) -> None:
 
 def save_seen(path: Path, seen: dict[str, date]) -> None:
     write_atomic(path, json.dumps({link: day.isoformat() for link, day in sorted(seen.items())}, indent=1) + "\n")
+
+
+# --- Model -------------------------------------------------------------------------
+
+class LlmError(Exception):
+    """The model call failed or its answer was not usable."""
+
+
+class Llm(Protocol):
+    def complete_json(self, system: str, user: str) -> dict: ...
+
+
+class DeepSeekLlm:
+    """DeepSeek's OpenAI-compatible API in JSON output mode. Errors never carry the key."""
+
+    def __init__(self, api_key: str, base_url: str, model: str):
+        import openai  # in Hermes's venv; imported here so the rest runs without it
+
+        self._key = api_key
+        self._model = model
+        self._client = openai.OpenAI(api_key=api_key, base_url=base_url, timeout=120, max_retries=2)
+
+    def _hide(self, text: str) -> str:
+        return text.replace(self._key, "***") if self._key else text
+
+    def complete_json(self, system: str, user: str) -> dict:
+        try:
+            resp = self._client.chat.completions.create(
+                model=self._model,
+                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+                response_format={"type": "json_object"},
+                temperature=0.2,
+            )
+            content = resp.choices[0].message.content or ""
+        except Exception as e:
+            raise LlmError(self._hide(f"{type(e).__name__}: {e}")) from None
+        try:
+            data = json.loads(content)
+        except ValueError:
+            raise LlmError("answer is not JSON") from None
+        if not isinstance(data, dict):
+            raise LlmError("answer is not a JSON object")
+        return data
+
+
+# --- Ranking -------------------------------------------------------------------------
+
+RANK_DESC_LIMIT = 400
+
+RANK_SYSTEM = (
+    "You pick tech news for a personalized daily digest. You get the reader's interests and a "
+    "numbered list of candidate articles. Choose the {top} articles most relevant to the interests: "
+    "topics under \"Core Topics\" outweigh those under \"Watching\". When several articles cover the "
+    "same news, keep only the most informative one. Score each chosen article 0-10 for relevance. "
+    'Answer with a JSON object only: {{"selected": [{{"id": <number>, "score": <0-10>}}, ...]}}, '
+    "best first, at most {top} entries."
+)
+
+
+def _int(value) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def rank(llm: Llm, interests: str, items: list[Article], top: int = 10) -> list[Article]:
+    lines = []
+    for i, a in enumerate(items):
+        desc = a.description[:RANK_DESC_LIMIT]
+        lines.append(f"[{i}] {a.title} ({a.source})" + (f"\n    {desc}" if desc else ""))
+    user = f"<Interests>\n{interests.strip()}\n</Interests>\n\n<Articles>\n" + "\n".join(lines) + "\n</Articles>"
+    answer = llm.complete_json(RANK_SYSTEM.format(top=top), user)
+    selected = answer.get("selected")
+    picked: dict[int, int] = {}
+    for entry in selected if isinstance(selected, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        i = _int(entry.get("id"))
+        if i is None or not 0 <= i < len(items) or i in picked:
+            continue
+        picked[i] = _int(entry.get("score")) or 0
+    if not picked:
+        raise LlmError("no article selected")
+    order = sorted(picked, key=lambda i: picked[i], reverse=True)  # stable: ties keep the model's order
+    return [items[i] for i in order[:top]]
+
+
+# --- Summaries (prompt ported from tech-radar-skill/scripts/summarize_article.py) ---
+
+@dataclass
+class Summary:
+    emoji: str
+    keywords: list[str]
+    summary: str
+
+
+SUMMARY_SYSTEM = """You summarize tech news articles for a personalized daily digest.
+For each article, output a single JSON object with EXACTLY these three keys and nothing else:
+  - "emoji": one Unicode emoji that fits the article's primary topic (e.g. 🤖 AI, 🔐 security, 🦀 Rust, ☁️ cloud, 🐧 Linux, 🛜 networking, 🧠 ML research, 📦 packaging).
+  - "keywords": an array of 3 to 5 short, specific Title-Case strings (e.g. ["DevOps","Kubernetes","Self-Hosting"]). No spaces inside a keyword unless natural.
+  - "summary": a 3 to 4 sentence paragraph describing what the article actually covers — what was announced or discovered, key technical details or findings, and why it is relevant to the user's interests. Be specific. Avoid generic filler like "this is important because…".
+If the article body is unavailable, summarize from the title and say the content was unavailable.
+
+Example input:
+<Interests>
+- AI/LLM inference
+- Self-hosting
+</Interests>
+
+<Article title="vLLM 0.7 adds speculative decoding for Llama 3">
+The vLLM team released v0.7 with built-in speculative decoding using a small draft model. Benchmarks on Llama 3 70B show 2.1x throughput at the same latency on H100s. The release also adds AWQ quantization fixes and OpenAI-compatible structured outputs.
+</Article>
+
+Example output:
+{"emoji": "🤖", "keywords": ["AI", "LLM", "Inference", "vLLM", "Self-Hosting"], "summary": "vLLM 0.7 introduces built-in speculative decoding driven by a small draft model, delivering a 2.1x throughput gain on Llama 3 70B at unchanged latency on H100 GPUs. The release also ships AWQ quantization fixes and OpenAI-compatible structured outputs. For self-hosted inference stacks, this materially lowers the cost of serving large open models."}"""
+
+FALLBACK_EMOJI = "📰"
+UNAVAILABLE = "Content unavailable."
+
+
+def _valid_summary(data: dict) -> Summary | None:
+    emoji, keywords, summary = data.get("emoji"), data.get("keywords"), data.get("summary")
+    if not isinstance(emoji, str) or not emoji.strip() or not isinstance(summary, str) or not summary.strip():
+        return None
+    if not isinstance(keywords, list):
+        keywords = []
+    words = [str(k).strip() for k in keywords if str(k).strip()][:5]
+    return Summary(emoji.strip(), words, summary.strip())
+
+
+def summarize(llm: Llm, interests: str, article: Article, body: str) -> Summary:
+    user = (
+        f"<Interests>\n{interests.strip()}\n</Interests>\n\n"
+        f"<Article title={json.dumps(article.title, ensure_ascii=False)}>\n"
+        f"{body.strip() or '(article body unavailable)'}\n</Article>"
+    )
+    for _ in range(2):  # one retry
+        try:
+            result = _valid_summary(llm.complete_json(SUMMARY_SYSTEM, user))
+        except LlmError:
+            result = None
+        if result:
+            return result
+    return Summary(FALLBACK_EMOJI, [], article.description or UNAVAILABLE)

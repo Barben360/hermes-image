@@ -32,3 +32,20 @@ def art(title: str, link: str | None = None, description: str = "", published=NO
 
 def arts(n: int):
     return [art(f"t{i}") for i in range(n)]
+
+
+class FakeLlm:
+    """Answers from a queue: a dict is returned, an exception is raised. Records (system, user)."""
+
+    def __init__(self, answers):
+        self.answers = list(answers)
+        self.calls = []
+
+    def complete_json(self, system: str, user: str) -> dict:
+        self.calls.append((system, user))
+        if not self.answers:
+            raise AssertionError("FakeLlm: no answer left")
+        a = self.answers.pop(0)
+        if isinstance(a, BaseException):
+            raise a
+        return a

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+<title>Fixture</title>
+<entry>
+<title>Atom story</title>
+<link rel="related" href="https://example.org/related"/>
+<link rel="alternate" href="https://example.org/alt"/>
+<summary>A summary that is long enough to be kept as the description of this Atom entry, yes.</summary>
+<published>2026-11-21T06:00:00Z</published>
+</entry>
+</feed>

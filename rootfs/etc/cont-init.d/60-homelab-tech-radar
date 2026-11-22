@@ -1,0 +1,29 @@
+#!/command/with-contenv sh
+# shellcheck shell=sh
+# Tech radar (skills/tech-radar): install its cron script at every start.
+#
+# Hermes runs cron scripts only from $HERMES_HOME/scripts (a path resolving
+# elsewhere is refused, symlinks included), so the image's copy is installed
+# into /opt/data/scripts/tech-radar/ and overwritten here: the image stays the
+# source of truth; change the script through a PR, not in the volume.
+#
+# Same rule as 50-homelab-credentials: root never writes in /opt/data (Hermes
+# owns it and could plant symlinks); root only reads the image's files, every
+# write in the volume runs as hermes through a fresh temp file + rename.
+set -eu
+
+SRC=/opt/hermes/skills/homelab/tech-radar/scripts
+DST=/opt/data/scripts/tech-radar
+
+as_hermes() { s6-setuidgid hermes "$@"; }
+write_as_hermes() { # write_as_hermes <file> <mode>: stdin to <file>
+    as_hermes sh -c 'umask 022; t=$(mktemp "$1.XXXXXX") && cat > "$t" && chmod "$2" "$t" && mv -f "$t" "$1"' _ "$1" "$2"
+}
+unlink_symlinks() { for p in "$@"; do if [ -L "$p" ]; then as_hermes rm -f "$p"; echo "[homelab] removed symlink $p" >&2; fi; done; }
+
+unlink_symlinks /opt/data/scripts "$DST" "$DST/tech_radar.py" "$DST/feeds.json"
+as_hermes mkdir -p "$DST"
+for f in tech_radar.py feeds.json; do
+    write_as_hermes "$DST/$f" 0644 < "$SRC/$f"
+done
+echo "[homelab] tech radar script installed in $DST"

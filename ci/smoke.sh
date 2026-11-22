@@ -5,7 +5,8 @@
 #   - with /run/secrets/github_token + github_login: gh's hosts.yml exists,
 #     owned by hermes, mode 600, and git uses gh as credential helper;
 #   - restarted without the token: hosts.yml is gone (no stale token);
-#   - symlinks planted in the volume give Hermes no file of the image.
+#   - symlinks planted in the volume give Hermes no file of the image;
+#   - the tech radar's unit tests pass and its script is installed for cron.
 set -eu
 
 IMAGE=${1:?usage: ci/smoke.sh <image>}
@@ -84,12 +85,22 @@ check "signing key owned by hermes, mode 600" \
     x sh -c "test \"\$(stat -c '%U %a' /opt/data/home/.ssh/hermes_signing)\" = 'hermes 600'"
 check "commits are SSH-signed and verify" \
     x sh -c 'd=$(mktemp -d) && cd "$d" && git init -q && git commit -q --allow-empty -m t && git verify-commit HEAD 2>&1 | grep -q "Good \"git\" signature for hermes@bbarrois.tech"'
-for skill in homelab-pr self-merge-image workspace-journal; do
+for skill in homelab-pr self-merge-image workspace-journal tech-radar; do
     check "skill $skill synced into Hermes's skills" \
         x sh -c "find /opt/data/skills -path '*/$skill/SKILL.md' | grep -q ."
 done
 check "git uses gh as credential helper" \
     x sh -c 'git config --global --get-all credential.https://github.com.helper | grep -qx "!gh auth git-credential"'
+TR_SRC=/opt/hermes/skills/homelab/tech-radar
+TR_DST=/opt/data/scripts/tech-radar
+check "tech radar unit tests pass in the image's Python" \
+    x sh -c "cd $TR_SRC && /opt/hermes/.venv/bin/python -m unittest discover -s tests"
+check "tech radar script installed for cron, owned by hermes" \
+    x sh -c "for f in tech_radar.py feeds.json; do test \"\$(stat -c %U $TR_DST/\$f)\" = hermes || exit 1; done"
+check "installed tech radar files match the image's" \
+    x sh -c "cmp $TR_SRC/scripts/tech_radar.py $TR_DST/tech_radar.py && cmp $TR_SRC/scripts/feeds.json $TR_DST/feeds.json"
+check "Europe/Paris zone available to the venv" \
+    x /opt/hermes/.venv/bin/python -c 'from zoneinfo import ZoneInfo; ZoneInfo("Europe/Paris")'
 
 KEY1=$(docker exec "$NAME" cat /opt/data/home/.ssh/hermes_signing.pub)
 start
@@ -104,6 +115,7 @@ check "signing key kept across restarts" \
 x ln -sf /opt/hermes/README.md /opt/data/home/.config/git/allowed_signers.tmp
 x sh -c 'rm -rf /opt/data/home/.config/gh && ln -s /etc/cont-init.d /opt/data/home/.config/gh'
 x sh -c 'rm -f /opt/data/home/.ssh/hermes_signing && ln -s /etc/cont-init.d/01-hermes-setup /opt/data/home/.ssh/hermes_signing'
+x sh -c 'rm -rf /opt/data/scripts/tech-radar && ln -s /etc/cont-init.d /opt/data/scripts/tech-radar'
 image_files() {
     docker exec "$NAME" sh -c 'stat -c "%n %U %a %s" /opt/hermes/README.md /etc/cont-init.d /etc/cont-init.d/*; md5sum /etc/cont-init.d/*; find /etc/cont-init.d /opt/hermes -maxdepth 1 -user hermes'
 }
@@ -114,5 +126,7 @@ check "gh credentials rebuilt in place of the symlinked dir" \
     x sh -c "test ! -L /opt/data/home/.config/gh && test \"\$(stat -c '%U %a' $HOSTS)\" = 'hermes 600'"
 check "a fresh signing key replaces the symlinked one" \
     x sh -c 'test ! -L /opt/data/home/.ssh/hermes_signing && test "$(stat -c "%U %a" /opt/data/home/.ssh/hermes_signing)" = "hermes 600"'
+check "tech radar dir rebuilt in place of the symlink" \
+    x sh -c 'test ! -L /opt/data/scripts/tech-radar && test -s /opt/data/scripts/tech-radar/tech_radar.py'
 
 exit $fail

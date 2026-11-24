@@ -38,8 +38,8 @@ type Issue struct {
 }
 
 type page struct {
-	Next    *string           `json:"next"`
-	Results []json.RawMessage `json:"results"`
+	Next    *string            `json:"next"`
+	Results *[]json.RawMessage `json:"results"`
 }
 
 func (c *Client) getPage(ctx context.Context, path string, q url.Values) (page, error) {
@@ -76,7 +76,7 @@ func (c *Client) getPage(ctx context.Context, path string, q url.Values) (page, 
 	if resp.StatusCode != http.StatusOK {
 		return p, fmt.Errorf("bugsink: HTTP %d on %s", resp.StatusCode, path)
 	}
-	if err := json.Unmarshal(body, &p); err != nil {
+	if err := json.Unmarshal(body, &p); err != nil || p.Results == nil {
 		return p, fmt.Errorf("bugsink: bad answer on %s", path)
 	}
 	return p, nil
@@ -95,15 +95,20 @@ func cursorOf(next *string) string {
 	return u.Query().Get("cursor")
 }
 
-// all follows the cursor pages of path; fn returns false to stop early.
-func (c *Client) all(ctx context.Context, path string, q url.Values, fn func(json.RawMessage) bool) error {
+// all follows the cursor pages of path; fn returns false to stop early, or an error.
+// Running out of pages while a next page exists is an error, never a silent cut.
+func (c *Client) all(ctx context.Context, path string, q url.Values, fn func(json.RawMessage) (bool, error)) error {
 	for i := 0; i < maxPages; i++ {
 		p, err := c.getPage(ctx, path, q)
 		if err != nil {
 			return err
 		}
-		for _, r := range p.Results {
-			if !fn(r) {
+		for _, r := range *p.Results {
+			more, err := fn(r)
+			if err != nil {
+				return err
+			}
+			if !more {
 				return nil
 			}
 		}
@@ -113,7 +118,7 @@ func (c *Client) all(ctx context.Context, path string, q url.Values, fn func(jso
 		}
 		q.Set("cursor", cur)
 	}
-	return nil
+	return fmt.Errorf("bugsink: more than %d pages on %s, answer truncated", maxPages, path)
 }
 
 func idString(raw json.RawMessage) string {
@@ -127,15 +132,16 @@ func idString(raw json.RawMessage) string {
 // Projects lists the projects the token can read.
 func (c *Client) Projects(ctx context.Context) ([]Project, error) {
 	var out []Project
-	err := c.all(ctx, "/api/canonical/0/projects/", url.Values{}, func(r json.RawMessage) bool {
+	err := c.all(ctx, "/api/canonical/0/projects/", url.Values{}, func(r json.RawMessage) (bool, error) {
 		var p struct {
 			ID   json.RawMessage `json:"id"`
 			Name string          `json:"name"`
 		}
-		if json.Unmarshal(r, &p) == nil && len(p.ID) > 0 {
-			out = append(out, Project{ID: idString(p.ID), Name: p.Name})
+		if json.Unmarshal(r, &p) != nil || len(p.ID) == 0 {
+			return false, fmt.Errorf("bugsink: unreadable project row")
 		}
-		return true
+		out = append(out, Project{ID: idString(p.ID), Name: p.Name})
+		return true, nil
 	})
 	return out, err
 }
@@ -155,7 +161,7 @@ func parseTime(s string) time.Time {
 func (c *Client) IssuesSince(ctx context.Context, project string, since time.Time) ([]Issue, error) {
 	var out []Issue
 	q := url.Values{"project": {project}, "sort": {"last_seen"}, "order": {"desc"}}
-	err := c.all(ctx, "/api/canonical/0/issues/", q, func(r json.RawMessage) bool {
+	err := c.all(ctx, "/api/canonical/0/issues/", q, func(r json.RawMessage) (bool, error) {
 		var v struct {
 			ID           json.RawMessage `json:"id"`
 			Title        string          `json:"title"`
@@ -165,23 +171,29 @@ func (c *Client) IssuesSince(ctx context.Context, project string, since time.Tim
 			LastSeen     string          `json:"last_seen"`
 			DigestedHits int             `json:"digested_event_count"`
 		}
-		if json.Unmarshal(r, &v) != nil {
-			return true
+		if json.Unmarshal(r, &v) != nil || len(v.ID) == 0 {
+			return false, fmt.Errorf("bugsink: unreadable issue row")
+		}
+		first := parseTime(v.FirstSeen)
+		if first.IsZero() {
+			return false, fmt.Errorf("bugsink: unreadable first_seen on an issue")
 		}
 		last := parseTime(v.LastSeen)
 		if !last.IsZero() && last.Before(since) {
-			return false
+			return false, nil
 		}
-		first := parseTime(v.FirstSeen)
-		if first.IsZero() || first.Before(since) {
-			return true
+		if first.Before(since) {
+			return true, nil
 		}
-		title := v.Title
+		title := strings.TrimSpace(strings.Trim(v.Type+": "+v.Value, ": "))
 		if title == "" {
-			title = strings.TrimSpace(v.Type + ": " + v.Value)
+			title = v.Title
+		}
+		if title == "" {
+			title = "(untitled)"
 		}
 		out = append(out, Issue{ID: idString(v.ID), Title: title, FirstSeen: first, LastSeen: last, EventCount: v.DigestedHits})
-		return true
+		return true, nil
 	})
 	return out, err
 }

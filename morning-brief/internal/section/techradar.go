@@ -2,7 +2,9 @@ package section
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -43,6 +45,10 @@ func collectTechRadar(_ context.Context, env *brief.Env, _ brief.SectionConfig) 
 	if err == nil && st.Mode().IsRegular() {
 		res.Status = brief.StatusReport
 		res.Facts = []brief.Fact{{Key: "today's note", Value: rel}}
+		return res
+	}
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		res.Status, res.Err = brief.StatusError, "tech radar note: cannot stat: "+brief.Sanitize(err.Error())
 		return res
 	}
 	res.Status = brief.StatusOK

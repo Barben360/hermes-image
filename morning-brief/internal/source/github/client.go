@@ -84,19 +84,21 @@ func urlErrorReason(err error) error {
 }
 
 // Search runs an issues/PRs search (first 100 hits, newest first).
-func (c *Client) Search(ctx context.Context, query string) ([]Issue, error) {
+// incomplete reports GitHub's incomplete_results flag (a timed-out search).
+func (c *Client) Search(ctx context.Context, query string) (items []Issue, incomplete bool, err error) {
 	q := url.Values{"q": {query}, "per_page": {"100"}, "sort": {"created"}, "order": {"desc"}}
 	_, body, err := c.get(ctx, "/search/issues", q)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	var out struct {
-		Items []Issue `json:"items"`
+		Items      *[]Issue `json:"items"`
+		Incomplete bool     `json:"incomplete_results"`
 	}
-	if err := json.Unmarshal(body, &out); err != nil {
-		return nil, fmt.Errorf("github: bad search answer")
+	if err := json.Unmarshal(body, &out); err != nil || out.Items == nil {
+		return nil, false, fmt.Errorf("github: bad search answer")
 	}
-	return out.Items, nil
+	return *out.Items, out.Incomplete, nil
 }
 
 var lastPage = regexp.MustCompile(`[?&]page=(\d+)[^>]*>;\s*rel="last"`)

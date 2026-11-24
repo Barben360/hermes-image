@@ -24,7 +24,7 @@ type GitHubConfig struct {
 
 func githubDefault() *GitHubConfig {
 	return &GitHubConfig{Enabled: true, Owner: "Barben360", Hours: 24, IncludeOwnLabels: []string{"hermes"},
-		ExcludeRepos: []string{}, APIURL: "https://api.github.com"}
+		ExcludeRepos: []string{}, Renovate: true, APIURL: "https://api.github.com"}
 }
 
 func (c *GitHubConfig) IsEnabled() bool { return c.Enabled }
@@ -96,13 +96,18 @@ func collectGitHub(ctx context.Context, env *brief.Env, sc brief.SectionConfig) 
 		}}
 	}
 
-	issues, err := c.Search(ctx, fmt.Sprintf("is:issue user:%s created:>=%s", cfg.Owner, cutoff.Format(time.RFC3339)))
+	incomplete := false
+	issues, inc, err := c.Search(ctx, fmt.Sprintf("is:issue user:%s created:>=%s", cfg.Owner, cutoff.Format(time.RFC3339)))
 	if err != nil {
 		return fail(err)
 	}
+	incomplete = incomplete || inc
 	for _, i := range issues {
 		created, perr := time.Parse(time.RFC3339, i.CreatedAt)
-		if perr != nil || created.Before(cutoff) || excluded(i.Repo()) {
+		if perr != nil {
+			return fail(fmt.Errorf("github: unreadable created_at on an issue"))
+		}
+		if created.Before(cutoff) || excluded(i.Repo()) {
 			continue
 		}
 		if strings.EqualFold(i.User.Login, cfg.Owner) {
@@ -125,10 +130,11 @@ func collectGitHub(ctx context.Context, env *brief.Env, sc brief.SectionConfig) 
 	}
 	seen := map[string]bool{}
 	for _, q := range prQueries {
-		prs, err := c.Search(ctx, q)
+		prs, inc, err := c.Search(ctx, q)
 		if err != nil {
 			return fail(err)
 		}
+		incomplete = incomplete || inc
 		for _, p := range prs {
 			if excluded(p.Repo()) || seen[p.HTMLURL] {
 				continue
@@ -145,6 +151,10 @@ func collectGitHub(ctx context.Context, env *brief.Env, sc brief.SectionConfig) 
 		res.Facts = append(res.Facts, brief.Fact{Key: "visible_repos", Value: strconv.Itoa(n)})
 	}
 	res.Status = brief.StatusOK
+	if incomplete {
+		res.Facts = append(res.Facts, brief.Fact{Key: "warning", Value: "GitHub search results incomplete (timed out); some issues may be missing"})
+		res.Status = brief.StatusReport
+	}
 	if len(res.Items) > 0 {
 		res.Status = brief.StatusReport
 	}

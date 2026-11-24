@@ -18,6 +18,8 @@ type ghFake struct {
 	issues  []map[string]any
 	prs     map[string][]map[string]any // query substring -> items
 	link    string
+	rawSrch string // when set, the search answer verbatim
+	rawRepo string // when set, the /user/repos answer verbatim
 }
 
 func ghItem(repo string, n int, title, author, created string, labels ...string) map[string]any {
@@ -46,9 +48,13 @@ func (f *ghFake) server(t *testing.T) *httptest.Server {
 		case "/search/issues":
 			q := r.URL.Query().Get("q")
 			f.queries = append(f.queries, q)
+			if f.rawSrch != "" {
+				_, _ = w.Write([]byte(f.rawSrch))
+				return
+			}
 			items := []map[string]any{}
 			if strings.Contains(q, "is:issue") {
-				items = f.issues
+				items = append(items, f.issues...)
 			} else {
 				for sub, it := range f.prs {
 					if strings.Contains(q, sub) {
@@ -60,6 +66,10 @@ func (f *ghFake) server(t *testing.T) *httptest.Server {
 		case "/user/repos":
 			if f.link != "" {
 				w.Header().Set("Link", f.link)
+			}
+			if f.rawRepo != "" {
+				_, _ = w.Write([]byte(f.rawRepo))
+				return
 			}
 			_, _ = w.Write([]byte(`[{"name":"a"}]`))
 		default:
@@ -139,9 +149,14 @@ func TestGitHubRenovatePRs(t *testing.T) {
 		}
 	}
 	f2 := &ghFake{prs: f.prs}
-	r2 := ghRun(t, f2, nil) // renovate off by default
+	r2 := ghRun(t, f2, func(c *GitHubConfig) { c.Renovate = false })
 	if strings.Contains(itemsText(r2), "bump dep") || strings.Contains(strings.Join(f2.queries, "|"), "renovate") {
 		t.Fatalf("renovate queried while off: %q", f2.queries)
+	}
+	f3 := &ghFake{prs: f.prs}
+	r3 := ghRun(t, f3, nil) // on by default
+	if !strings.Contains(strings.Join(f3.queries, "|"), "author:app/renovate") || !strings.Contains(itemsText(r3), "bump dep") {
+		t.Fatalf("renovate not on by default: %q", f3.queries)
 	}
 }
 
@@ -201,5 +216,47 @@ func TestGitHubTitleIsUntrusted(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("no title fact")
+	}
+}
+
+func TestGitHubWrongShapeIsError(t *testing.T) {
+	for name, f := range map[string]*ghFake{
+		"search without items":  {rawSrch: `{}`},
+		"search not an object":  {rawSrch: `[]`},
+		"repos not a list":      {rawRepo: `{}`},
+		"unreadable created_at": {rawSrch: `{"items":[{"repository_url":"https://api.github.com/repos/o/r","number":1,"title":"t","created_at":"yesterday","user":{"login":"x"}}]}`},
+	} {
+		r := ghRun(t, f, nil)
+		if name == "repos not a list" {
+			// non-fatal for the section, but never a count
+			if v, _ := factVal(r.Facts, "visible_repos"); v != "unavailable" {
+				t.Errorf("%s: visible_repos %q", name, v)
+			}
+			continue
+		}
+		if r.Status != brief.StatusError {
+			t.Errorf("%s: status %s, want error", name, r.Status)
+		}
+	}
+}
+
+func TestGitHubIncompleteResultsWarn(t *testing.T) {
+	r := ghRun(t, &ghFake{rawSrch: `{"incomplete_results":true,"items":[]}`}, nil)
+	if r.Status != brief.StatusReport {
+		t.Fatalf("status %s", r.Status)
+	}
+	if _, ok := factVal(r.Facts, "warning"); !ok {
+		t.Fatal("no warning fact")
+	}
+}
+
+func TestGitHubExcludeBareRepoName(t *testing.T) {
+	f := &ghFake{issues: []map[string]any{
+		ghItem("Barben360/noisy", 1, "hidden", "someone", "2026-11-25T05:00:00Z"),
+		ghItem("Barben360/alpha", 2, "shown", "someone", "2026-11-25T05:00:00Z"),
+	}}
+	got := itemsText(ghRun(t, f, func(c *GitHubConfig) { c.ExcludeRepos = []string{"noisy"} }))
+	if strings.Contains(got, "hidden") || !strings.Contains(got, "shown") {
+		t.Fatalf("got %s", got)
 	}
 }

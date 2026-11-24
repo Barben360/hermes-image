@@ -3,6 +3,7 @@ package section
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -58,18 +59,22 @@ func collectDeepSeek(ctx context.Context, env *brief.Env, sc brief.SectionConfig
 	if err != nil {
 		return fail(err)
 	}
+	if b.IsAvailable && len(b.BalanceInfos) == 0 {
+		return fail(fmt.Errorf("deepseek: no balance in the answer"))
+	}
 	var warnings []string
 	if !b.IsAvailable {
 		warnings = append(warnings, "account unavailable (API calls will fail)")
 	}
 	for _, i := range b.BalanceInfos {
 		v, perr := strconv.ParseFloat(i.TotalBalance, 64)
-		if perr != nil {
-			return fail(fmt.Errorf("deepseek: unreadable %s balance", i.Currency))
+		if perr != nil || math.IsNaN(v) || math.IsInf(v, 0) {
+			return fail(fmt.Errorf("deepseek: unreadable %s balance", brief.Sanitize(i.Currency)))
 		}
-		res.Facts = append(res.Facts, brief.Fact{Key: "balance " + i.Currency, Value: i.TotalBalance})
+		cur := brief.Sanitize(i.Currency)
+		res.Facts = append(res.Facts, brief.Fact{Key: "balance " + cur, Value: i.TotalBalance})
 		if v < cfg.WarnBelow {
-			warnings = append(warnings, fmt.Sprintf("%s balance %s is below %g", i.Currency, i.TotalBalance, cfg.WarnBelow))
+			warnings = append(warnings, fmt.Sprintf("%s balance %s is below %g", cur, i.TotalBalance, cfg.WarnBelow))
 		}
 	}
 	res.Status = brief.StatusOK

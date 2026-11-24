@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Barben360/hermes-image/morning-brief/internal/brief"
 )
@@ -66,5 +67,44 @@ func TestB11ConfigsValidate(t *testing.T) {
 	h.Hours = 0
 	if h.Validate() == nil {
 		t.Fatal("hours 0 must fail")
+	}
+}
+
+func TestTechRadarUsesLocalDate(t *testing.T) {
+	vault := t.TempDir()
+	// 2026-11-25 23:30 UTC is already 2026-11-26 in Paris
+	rel := "Tech/Tech Radar/Dailies/2026/11/2026-11-26.md"
+	p := filepath.Join(vault, rel)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loc, err := time.LoadLocation("Europe/Paris")
+	if err != nil {
+		t.Skip("no tzdata")
+	}
+	env := b11Env(t, nil, brief.Sources{VaultDir: vault})
+	env.Now = time.Date(2026, 11, 25, 23, 30, 0, 0, time.UTC)
+	env.Loc = loc
+	r := b11Section(t, "tech_radar").Collect(t.Context(), env, techRadarDefault())
+	if v, _ := factVal(r.Facts, "today's note"); v != rel {
+		t.Fatalf("got %+v", r)
+	}
+	env.Loc = time.UTC
+	if r := b11Section(t, "tech_radar").Collect(t.Context(), env, techRadarDefault()); r.Status != brief.StatusOK {
+		t.Fatalf("UTC date has no note, got %+v", r)
+	}
+}
+
+func TestTechRadarStatErrorIsError(t *testing.T) {
+	vault := t.TempDir()
+	if err := os.WriteFile(filepath.Join(vault, "Tech"), []byte("a file where a directory should be"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := b11Env(t, nil, brief.Sources{VaultDir: vault})
+	if r := b11Section(t, "tech_radar").Collect(t.Context(), env, techRadarDefault()); r.Status != brief.StatusError {
+		t.Fatalf("status %s", r.Status)
 	}
 }

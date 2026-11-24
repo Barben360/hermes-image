@@ -13,16 +13,19 @@ import (
 )
 
 type bsFake struct {
-	mu     sync.Mutex
-	host   string
-	auth   string
-	paths  []string
-	issues map[string][]map[string]any // project id -> issues (newest last_seen first)
-	page2  bool
+	mu      sync.Mutex
+	host    string
+	auth    string
+	paths   []string
+	issues  map[string][]map[string]any // project id -> issues (newest last_seen first)
+	page2   bool
+	endless bool   // every page has a next
+	raw     string // when set, the issues answer verbatim
 }
 
 func bsIssue(id, title, first, last string, n int) map[string]any {
-	return map[string]any{"id": id, "title": title, "first_seen": first, "last_seen": last, "digested_event_count": n}
+	typ, val, _ := strings.Cut(title, ": ")
+	return map[string]any{"id": id, "calculated_type": typ, "calculated_value": val, "first_seen": first, "last_seen": last, "digested_event_count": n}
 }
 
 func (f *bsFake) server(t *testing.T) *httptest.Server {
@@ -37,7 +40,15 @@ func (f *bsFake) server(t *testing.T) *httptest.Server {
 				{"id": 1, "name": "app-one"}, {"id": 2, "name": "app-two"}}})
 		case "/api/canonical/0/issues/":
 			p := r.URL.Query().Get("project")
-			all := f.issues[p]
+			if f.raw != "" {
+				_, _ = w.Write([]byte(f.raw))
+				return
+			}
+			if f.endless {
+				_ = json.NewEncoder(w).Encode(map[string]any{"next": "http://x/?cursor=more", "results": []any{}})
+				return
+			}
+			all := append([]map[string]any{}, f.issues[p]...)
 			if f.page2 && p == "1" {
 				if r.URL.Query().Get("cursor") == "" {
 					next := "https://elsewhere.invalid/api/canonical/0/issues/?cursor=abc&project=1"
@@ -142,5 +153,43 @@ func TestBugsinkBadTokenIsError(t *testing.T) {
 	r := b11Section(t, "bugsink").Collect(t.Context(), env, bugsinkDefault())
 	if r.Status != brief.StatusError || !strings.Contains(r.Err, "401") {
 		t.Fatalf("got %+v", r)
+	}
+}
+
+func TestBugsinkWrongShapeIsError(t *testing.T) {
+	for name, raw := range map[string]string{
+		"no results":     `{}`,
+		"bad row":        `{"next":null,"results":["x"]}`,
+		"bad first_seen": `{"next":null,"results":[{"id":"u","first_seen":"soon","last_seen":"2026-11-25T05:00:00Z"}]}`,
+		"missing id":     `{"next":null,"results":[{"first_seen":"2026-11-25T03:00:00Z","last_seen":"2026-11-25T05:00:00Z"}]}`,
+	} {
+		r := bsRun(t, &bsFake{raw: raw, issues: map[string][]map[string]any{}})
+		if r.Status != brief.StatusError {
+			t.Errorf("%s: status %s, want error", name, r.Status)
+		}
+	}
+}
+
+func TestBugsinkNoProjectsResultsIsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`{}`)) }))
+	defer srv.Close()
+	env := b11Env(t, map[string]string{"bugsink_token": "x"}, brief.Sources{BugsinkURL: srv.URL, BugsinkHost: "h"})
+	if r := b11Section(t, "bugsink").Collect(t.Context(), env, bugsinkDefault()); r.Status != brief.StatusError {
+		t.Fatalf("status %s", r.Status)
+	}
+}
+
+func TestBugsinkTruncationIsError(t *testing.T) {
+	r := bsRun(t, &bsFake{endless: true, issues: map[string][]map[string]any{}})
+	if r.Status != brief.StatusError || !strings.Contains(r.Err, "truncated") {
+		t.Fatalf("got %+v", r)
+	}
+}
+
+func TestBugsinkUntitled(t *testing.T) {
+	f := &bsFake{issues: map[string][]map[string]any{"1": {
+		{"id": "u", "first_seen": "2026-11-25T03:00:00Z", "last_seen": "2026-11-25T06:00:00Z", "digested_event_count": 1}}, "2": {}}}
+	if got := itemsText(bsRun(t, f)); !strings.Contains(got, "(untitled)") {
+		t.Fatalf("got %s", got)
 	}
 }

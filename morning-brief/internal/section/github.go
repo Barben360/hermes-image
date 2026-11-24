@@ -53,7 +53,7 @@ func init() {
 	})
 }
 
-func inList(list []string, v string) bool {
+func inListFold(list []string, v string) bool {
 	for _, x := range list {
 		if strings.EqualFold(x, v) {
 			return true
@@ -77,11 +77,11 @@ func collectGitHub(ctx context.Context, env *brief.Env, sc brief.SectionConfig) 
 	cutoff := env.Now.Add(-time.Duration(cfg.Hours) * time.Hour).UTC()
 
 	excluded := func(repo string) bool {
-		if inList(cfg.ExcludeRepos, repo) {
+		if inListFold(cfg.ExcludeRepos, repo) {
 			return true
 		}
 		if i := strings.IndexByte(repo, '/'); i >= 0 {
-			return inList(cfg.ExcludeRepos, repo[i+1:])
+			return inListFold(cfg.ExcludeRepos, repo[i+1:])
 		}
 		return false
 	}
@@ -113,7 +113,7 @@ func collectGitHub(ctx context.Context, env *brief.Env, sc brief.SectionConfig) 
 		if strings.EqualFold(i.User.Login, cfg.Owner) {
 			keep := false
 			for _, l := range i.Labels {
-				if inList(cfg.IncludeOwnLabels, l.Name) {
+				if inListFold(cfg.IncludeOwnLabels, l.Name) {
 					keep = true
 				}
 			}

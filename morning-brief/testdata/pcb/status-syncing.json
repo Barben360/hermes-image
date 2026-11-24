@@ -1,0 +1,3 @@
+{"now":{"at":"2026-11-24T07:15:00+01:00","zone":"Europe/Paris","offset":"+01:00"},"zone":"Europe/Paris",
+ "accounts":[{"account":"owner@example.test","id":"acc1","phase":"ready","read_only":true,
+  "stale_calendars":["cal-main","cal-family","cal-holidays","cal-sports"]}]}

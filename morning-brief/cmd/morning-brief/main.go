@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -17,6 +18,7 @@ import (
 	"github.com/Barben360/hermes-image/morning-brief/internal/brief"
 	"github.com/Barben360/hermes-image/morning-brief/internal/config"
 	_ "github.com/Barben360/hermes-image/morning-brief/internal/section"
+	"github.com/Barben360/hermes-image/morning-brief/internal/source/ha"
 )
 
 const (
@@ -72,13 +74,35 @@ func parseInterleaved(fs *flag.FlagSet, args []string) ([]string, error) {
 }
 
 func newEnv(now time.Time, loc *time.Location, secrets *brief.Secrets, src brief.Sources) *brief.Env {
-	return &brief.Env{
+	env := &brief.Env{
 		Now:     now,
 		Loc:     loc,
 		HTTP:    &http.Client{Timeout: 15 * time.Second},
 		Dial:    (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
 		Secrets: secrets,
 		Sources: src,
+	}
+	env.HA = memoHA(env)
+	return env
+}
+
+// memoHA fetches Home Assistant's states once per run, however many sections ask (concurrently or not).
+func memoHA(env *brief.Env) func(context.Context) (*ha.Snapshot, error) {
+	var (
+		once sync.Once
+		snap *ha.Snapshot
+		err  error
+	)
+	return func(ctx context.Context) (*ha.Snapshot, error) {
+		once.Do(func() {
+			var token string
+			if token, err = env.Secrets.Read("ha_token"); err != nil {
+				return
+			}
+			c := &ha.Client{BaseURL: env.Sources.HAURL, Token: token, HTTP: env.HTTP, Rec: env.Rec}
+			snap, err = c.States(ctx)
+		})
+		return snap, err
 	}
 }
 

@@ -1,6 +1,7 @@
 package section
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -28,11 +29,10 @@ func TestExpiriesWithin30Days(t *testing.T) {
 	}
 	got := map[string]string{}
 	for _, it := range r.Items {
-		m := factMap(it)
-		got[m["credential"]] = m["expires"]
+		got[it.Facts[0].Key] = it.Facts[0].Value
 	}
-	if got["near"] != "2026-12-24 in 29 days" || got["today"] != "2026-11-25 expires today" ||
-		got["past"] != "2026-11-20 expired 5 days ago" {
+	if got["near"] != "in 29 days" || got["today"] != "expires today" ||
+		got["past"] != "expired 5 days ago" {
 		t.Fatalf("%v", got)
 	}
 	if _, ok := got["far"]; ok {
@@ -66,5 +66,20 @@ func TestExpiriesMissingFileIsError(t *testing.T) {
 	r := collectExpiries(context.Background(), testEnv(t, "", nil), expCfg("gone"))
 	if r.Status != brief.StatusError || !strings.Contains(r.Err, "gone") {
 		t.Fatalf("%s %q", r.Status, r.Err)
+	}
+}
+
+func TestExpiriesSurvivesScrubbedRender(t *testing.T) {
+	env := testEnv(t, "", map[string]string{"near": "2026-12-24\n"})
+	r := collectExpiries(context.Background(), env, expCfg("near", "near"))
+	if len(r.Items) != 1 {
+		t.Fatalf("duplicate file names must collapse, items %d", len(r.Items))
+	}
+	var out bytes.Buffer
+	if err := brief.RenderText(&out, brief.Doc{Now: env.Now, Results: []brief.Result{r}}, env.Secrets); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "near: in 29 days") || strings.Contains(out.String(), "[redacted]") {
+		t.Fatalf("%s", out.String())
 	}
 }

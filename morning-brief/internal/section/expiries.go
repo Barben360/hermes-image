@@ -45,7 +45,12 @@ func collectExpiries(_ context.Context, env *brief.Env, sc brief.SectionConfig) 
 	}
 	today := time.Date(env.Now.In(loc).Year(), env.Now.In(loc).Month(), env.Now.In(loc).Day(), 0, 0, 0, 0, time.UTC)
 	var errs []string
+	seen := map[string]bool{}
 	for _, name := range cfg.Files {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
 		raw, err := env.Secrets.Read(name)
 		if err != nil {
 			errs = append(errs, err.Error())
@@ -60,15 +65,14 @@ func collectExpiries(_ context.Context, env *brief.Env, sc brief.SectionConfig) 
 		if days > cfg.WarnWithinDays {
 			continue
 		}
-		val := fmt.Sprintf("%s in %d days", d.Format("2006-01-02"), days)
+		// The date itself is never printed: the file's content is on the scrub list.
+		val := fmt.Sprintf("in %d days", days)
 		if days < 0 {
-			val = fmt.Sprintf("%s expired %d days ago", d.Format("2006-01-02"), -days)
+			val = fmt.Sprintf("expired %d days ago", -days)
 		} else if days == 0 {
-			val = d.Format("2006-01-02") + " expires today"
+			val = "expires today"
 		}
-		res.Items = append(res.Items, brief.Item{Facts: []brief.Fact{
-			{Key: "credential", Value: name}, {Key: "expires", Value: val},
-		}})
+		res.Items = append(res.Items, brief.Item{Facts: []brief.Fact{{Key: name, Value: val}}})
 	}
 	switch {
 	case len(errs) > 0:

@@ -66,6 +66,9 @@ func collectAlerts(ctx context.Context, env *brief.Env, sc brief.SectionConfig) 
 	}
 	var firing, news []grafana.Alert
 	for _, a := range alerts {
+		if a.Labels["alertname"] == "" || a.StartsAt.IsZero() {
+			continue // malformed entry
+		}
 		if excl[a.Labels["alertname"]] {
 			continue
 		}

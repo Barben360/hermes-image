@@ -158,3 +158,23 @@ func TestAlertsMissingToken(t *testing.T) {
 		t.Fatalf("%s %q", r.Status, r.Err)
 	}
 }
+
+func TestAlertsMalformedEntriesSkipped(t *testing.T) {
+	srv := amServer(t, `[{}]`)
+	defer srv.Close()
+	r := collectAlerts(context.Background(), testEnv(t, srv.URL, map[string]string{"grafana_token": "tok123"}), alertsCfg())
+	if r.Status != brief.StatusOK || len(r.Items) != 0 {
+		t.Fatalf("%s %d", r.Status, len(r.Items))
+	}
+}
+
+func TestAlertsGarbage200IsError(t *testing.T) {
+	for _, body := range []string{"<html>hi</html>", "{}"} {
+		srv := amServer(t, body)
+		r := collectAlerts(context.Background(), testEnv(t, srv.URL, map[string]string{"grafana_token": "tok123"}), alertsCfg())
+		srv.Close()
+		if r.Status != brief.StatusError {
+			t.Fatalf("%q: status %s", body, r.Status)
+		}
+	}
+}

@@ -81,6 +81,7 @@ func (c *calendarConfig) Validate() error {
 }
 
 type pcbStatus struct {
+	Zone     string `json:"zone"`
 	Accounts []struct {
 		Account        string   `json:"account"`
 		ID             string   `json:"id"`
@@ -108,6 +109,9 @@ type pcbTime struct {
 }
 
 type pcbEvents struct {
+	Zone   string `json:"zone"`
+	From   string `json:"from"`
+	To     string `json:"to"`
 	Events []struct {
 		CalendarID   string  `json:"calendar_id"`
 		CalendarType string  `json:"calendar_type"`
@@ -155,6 +159,9 @@ func collectCalendar(ctx context.Context, env *brief.Env, sc brief.SectionConfig
 	if err := callJSON(ctx, cl, "status", nil, &st); err != nil {
 		return fail("%v", err)
 	}
+	if st.Zone == "" || st.Accounts == nil {
+		return fail("pcb status: unexpected answer (no zone or accounts)")
+	}
 	if len(st.Accounts) == 0 {
 		return fail("pcb sees no account: no calendar can be read")
 	}
@@ -178,6 +185,9 @@ func collectCalendar(ctx context.Context, env *brief.Env, sc brief.SectionConfig
 	var cals pcbCalendars
 	if err := callJSON(ctx, cl, "calendars_list", nil, &cals); err != nil {
 		return fail("%v", err)
+	}
+	if cals.Calendars == nil {
+		return fail("pcb calendars_list: unexpected answer (no calendars list)")
 	}
 	if len(cals.Unavailable) > 0 {
 		return fail("pcb could not list the calendars of %d account(s)", len(cals.Unavailable))
@@ -222,6 +232,9 @@ func collectCalendar(ctx context.Context, env *brief.Env, sc brief.SectionConfig
 		var p pcbEvents
 		if err := callJSON(ctx, cl, "events_list", args, &p); err != nil {
 			return fail("%v", err)
+		}
+		if p.Zone == "" || p.From == "" || p.To == "" {
+			return fail("pcb events_list: unexpected answer (no zone or range)")
 		}
 		if p.Skipped > 0 {
 			return fail("pcb could not read %d event(s): the day may be incomplete", p.Skipped)

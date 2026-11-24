@@ -27,13 +27,19 @@ import (
 const testToken = "tok-0123456789abcdef"
 
 type fakePCB struct {
-	t     *testing.T
-	srv   *httptest.Server
-	mu    sync.Mutex
-	tools map[string]func(args map[string]any) any
-	calls []string
-	args  map[string][]map[string]any
-	sse   bool
+	t           *testing.T
+	srv         *httptest.Server
+	mu          sync.Mutex
+	tools       map[string]func(args map[string]any) any
+	calls       []string
+	args        map[string][]map[string]any
+	sse         bool
+	raw         bool            // events_list answers are sent as the handler built them
+	rpcErr      map[string]bool // tool -> JSON-RPC error with HTTP 200
+	isErr       map[string]bool // tool -> isError result
+	noSession   bool
+	fakeReq     bool // SSE: a server request with the same id comes first
+	sessionSeen []string
 }
 
 func fixture(t *testing.T, name string) map[string]any {
@@ -81,24 +87,30 @@ func (f *fakePCB) serve(w http.ResponseWriter, r *http.Request) {
 		b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
 		if f.sse {
 			w.Header().Set("Content-Type", "text/event-stream")
+			if f.fakeReq {
+				fmt.Fprintf(w, "data: {\"jsonrpc\":\"2.0\",\"id\":%d,\"method\":\"ping\"}\n\n", *req.ID)
+			}
 			fmt.Fprintf(w, "event: message\ndata: %s\n\n", b)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(b)
 	}
+
 	switch req.Method {
 	case "initialize":
-		w.Header().Set("Mcp-Session-Id", "sess-1")
+		if !f.noSession {
+			w.Header().Set("Mcp-Session-Id", "sess-1")
+		}
 		reply(map[string]any{"protocolVersion": "2025-06-18", "capabilities": map[string]any{}, "serverInfo": map[string]any{"name": "pcb"}})
 	case "notifications/initialized":
-		if r.Header.Get("Mcp-Session-Id") != "sess-1" {
+		if r.Header.Get("Mcp-Session-Id") != f.wantSession() || r.Header.Get("MCP-Protocol-Version") != "2025-06-18" {
 			http.Error(w, "no session", 400)
 			return
 		}
 		w.WriteHeader(202)
 	case "tools/call":
-		if r.Header.Get("Mcp-Session-Id") != "sess-1" {
+		if r.Header.Get("Mcp-Session-Id") != f.wantSession() || r.Header.Get("MCP-Protocol-Version") != "2025-06-18" {
 			http.Error(w, "no session", 400)
 			return
 		}
@@ -111,16 +123,40 @@ func (f *fakePCB) serve(w http.ResponseWriter, r *http.Request) {
 		f.args[p.Name] = append(f.args[p.Name], p.Arguments)
 		h := f.tools[p.Name]
 		f.mu.Unlock()
+		if f.rpcErr[p.Name] {
+			b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32000, "message": "boom"}})
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(b)
+			return
+		}
+		if f.isErr[p.Name] {
+			reply(map[string]any{"isError": true, "content": []any{map[string]any{"type": "text", "text": "pcb says no"}}})
+			return
+		}
 		if h == nil {
 			reply(map[string]any{"isError": true, "content": []any{map[string]any{"type": "text", "text": "unknown tool"}}})
 			return
 		}
 		out := h(p.Arguments)
+		if m, ok := out.(map[string]any); ok && p.Name == "events_list" && !f.raw {
+			c := map[string]any{"zone": "Europe/Paris", "from": "x", "to": "y"}
+			for k, v := range m {
+				c[k] = v
+			}
+			out = c
+		}
 		b, _ := json.Marshal(out)
 		reply(map[string]any{"content": []any{map[string]any{"type": "text", "text": string(b)}}, "structuredContent": out})
 	default:
 		http.Error(w, "unknown method", 400)
 	}
+}
+
+func (f *fakePCB) wantSession() string {
+	if f.noSession {
+		return ""
+	}
+	return "sess-1"
 }
 
 func (f *fakePCB) env(t *testing.T, now string) *brief.Env {
@@ -503,12 +539,14 @@ func TestCalendarSSEAndAuth(t *testing.T) {
 		t.Fatalf("handshake: %v", f.calls)
 	}
 	// a wrong token: error that never contains the token
-	os.WriteFile(filepath.Join(filepath.Dir(env.Sources.PCBCA), "pcb_token"), []byte("wrong-token-xyz"), 0o600)
 	env2 := f.env(t, "2026-11-24T07:15")
 	os.WriteFile(filepath.Join(filepath.Dir(env2.Sources.PCBCA), "pcb_token"), []byte("wrong-token-xyz"), 0o600)
 	r := collectCal(t, env2, nil)
 	if r.Status != brief.StatusError || !strings.Contains(r.Err, "401") {
 		t.Fatalf("want 401 error, got %s %q", r.Status, r.Err)
+	}
+	if out := render(t, env2, r); strings.Contains(out, "wrong-token-xyz") || strings.Contains(r.Err, "wrong-token-xyz") {
+		t.Fatalf("token leaked:\n%s", out)
 	}
 }
 
@@ -550,5 +588,127 @@ func TestCalendarConfigValidate(t *testing.T) {
 	s := calSection()
 	if !s.ThirdParty || len(s.Credentials) != 1 || s.Credentials[0] != "pcb_token" {
 		t.Fatalf("section flags: %+v", s)
+	}
+}
+
+func wantError(t *testing.T, f *fakePCB, want string) {
+	t.Helper()
+	env := f.env(t, "2026-11-24T07:15")
+	r := collectCal(t, env, nil)
+	if r.Status != brief.StatusError || !strings.Contains(r.Err, want) {
+		t.Fatalf("want error containing %q, got %s %q", want, r.Status, r.Err)
+	}
+	if out := render(t, env, r); strings.Contains(out, "today:") || strings.Contains(out, "no events") || strings.Contains(out, "Dentist") {
+		t.Fatalf("events or empty-day line printed after a failure:\n%s", out)
+	}
+}
+
+func TestCalendarOddAnswersAreErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name, tool string
+		out        any
+		want       string
+	}{
+		{"events empty object", "events_list", map[string]any{}, "unexpected answer"},
+		{"events foreign object", "events_list", map[string]any{"foo": 1}, "unexpected answer"},
+		{"events wrong type", "events_list", map[string]any{"events": "x"}, "unexpected result shape"},
+		{"status empty object", "status", map[string]any{}, "unexpected answer"},
+		{"calendars empty object", "calendars_list", map[string]any{}, "unexpected answer"},
+		{"calendars null list", "calendars_list", map[string]any{"calendars": nil}, "unexpected answer"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFakePCB(t, "status-ready.json")
+			f.raw = true
+			out := tc.out
+			f.tools[tc.tool] = func(map[string]any) any { return out }
+			wantError(t, f, tc.want)
+		})
+	}
+}
+
+func TestCalendarNullEventsArrayIsAnEmptyDay(t *testing.T) {
+	f := newFakePCB(t, "status-ready.json")
+	f.tools["events_list"] = func(map[string]any) any { return map[string]any{"events": nil, "truncated": false} }
+	env := f.env(t, "2026-11-24T07:15")
+	if r := collectCal(t, env, nil); r.Status != brief.StatusOK {
+		t.Fatalf("pcb serialises an empty list as null: %s %q", r.Status, r.Err)
+	}
+}
+
+func TestCalendarMCPFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		mod  func(*fakePCB)
+		want string
+	}{
+		{"rpc error on status", func(f *fakePCB) { f.rpcErr = map[string]bool{"status": true} }, "boom"},
+		{"rpc error on events", func(f *fakePCB) { f.rpcErr = map[string]bool{"events_list": true} }, "boom"},
+		{"isError on status", func(f *fakePCB) { f.isErr = map[string]bool{"status": true} }, "pcb says no"},
+		{"isError on events", func(f *fakePCB) { f.isErr = map[string]bool{"events_list": true} }, "pcb says no"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFakePCB(t, "status-ready.json")
+			tc.mod(f)
+			wantError(t, f, tc.want)
+		})
+	}
+}
+
+func TestCalendarNoSessionHeaderProceeds(t *testing.T) {
+	// A server that issues no Mcp-Session-Id is stateless: the client goes on without the header.
+	f := newFakePCB(t, "status-ready.json")
+	f.noSession = true
+	env := f.env(t, "2026-11-24T07:15")
+	if r := collectCal(t, env, nil); r.Status != brief.StatusReport {
+		t.Fatalf("%s %q", r.Status, r.Err)
+	}
+}
+
+func TestCalendarIgnoresServerRequestWithSameID(t *testing.T) {
+	f := newFakePCB(t, "status-ready.json")
+	f.sse, f.fakeReq = true, true
+	env := f.env(t, "2026-11-24T07:15")
+	if r := collectCal(t, env, nil); r.Status != brief.StatusReport {
+		t.Fatalf("%s %q", r.Status, r.Err)
+	}
+}
+
+func TestCalendarTimesWithoutOffsetAndFloating(t *testing.T) {
+	f := newFakePCB(t, "status-ready.json")
+	f.tools["events_list"] = func(map[string]any) any {
+		return map[string]any{"events": []any{
+			evt("a", "cal-main", "normal", "No offset", map[string]any{"at": "2026-11-24T09:00:00"}, map[string]any{"at": "2026-11-24T10:00:00"}),
+			evt("b", "cal-main", "normal", "Floating", map[string]any{"at": "2026-11-25T18:30:00", "floating": true}, map[string]any{"at": "2026-11-25T19:00:00", "floating": true}),
+		}}
+	}
+	env := f.env(t, "2026-11-24T07:15")
+	out := render(t, env, collectCal(t, env, nil))
+	for _, w := range []string{`- today: 09:00-10:00 · title: "No offset"`, `- tomorrow: 18:30-19:00 · title: "Floating"`} {
+		if !strings.Contains(out, w) {
+			t.Fatalf("missing %q in:\n%s", w, out)
+		}
+	}
+}
+
+func TestCalendarUnparsableTimeIsError(t *testing.T) {
+	f := newFakePCB(t, "status-ready.json")
+	f.tools["events_list"] = func(map[string]any) any {
+		return map[string]any{"events": []any{
+			evt("a", "cal-main", "normal", "Bad", map[string]any{"at": "yesterday-ish"}, map[string]any{"at": "2026-11-24T10:00:00"}),
+		}}
+	}
+	wantError(t, f, "event time")
+}
+
+func TestCalendarRefusesNonHTTPSURL(t *testing.T) {
+	f := newFakePCB(t, "status-ready.json")
+	env := f.env(t, "2026-11-24T07:15")
+	env.Sources.PCBURL = strings.Replace(env.Sources.PCBURL, "https://", "http://", 1)
+	r := collectCal(t, env, nil)
+	if r.Status != brief.StatusError || !strings.Contains(r.Err, "sources.pcb_url") {
+		t.Fatalf("%s %q", r.Status, r.Err)
+	}
+	if len(f.calls) != 0 {
+		t.Fatal("a request was made")
 	}
 }

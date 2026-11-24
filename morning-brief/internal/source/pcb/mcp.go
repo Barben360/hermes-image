@@ -31,12 +31,16 @@ type Client struct {
 	mu      sync.Mutex
 	ready   bool
 	session string
+	version string // protocol version the server answered to initialize
 	nextID  int
 }
 
 // New builds a client. caFile, when set, is the only CA trusted for the server's certificate.
 // base supplies the timeout (nil = 10 s); its transport is replaced.
 func New(base *http.Client, url, token, caFile string) (*Client, error) {
+	if !strings.HasPrefix(url, "https://") {
+		return nil, errors.New("sources.pcb_url must be an https:// URL")
+	}
 	tr := &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}}
 	if caFile != "" {
 		pem, err := os.ReadFile(caFile)
@@ -64,6 +68,7 @@ type rpcRequest struct {
 }
 
 type rpcResponse struct {
+	Method string          `json:"method"` // set on server requests and notifications, never on an answer
 	ID     *int            `json:"id"`
 	Result json.RawMessage `json:"result"`
 	Error  *struct {
@@ -77,13 +82,21 @@ func (c *Client) Call(ctx context.Context, tool string, args any) (json.RawMessa
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.ready {
-		if _, err := c.rpc(ctx, "initialize", map[string]any{
+		init, err := c.rpc(ctx, "initialize", map[string]any{
 			"protocolVersion": protocolVersion,
 			"capabilities":    map[string]any{},
 			"clientInfo":      map[string]any{"name": "morning-brief", "version": "1"},
-		}, true); err != nil {
+		}, true)
+		if err != nil {
 			return nil, fmt.Errorf("pcb initialize: %w", err)
 		}
+		var ir struct {
+			ProtocolVersion string `json:"protocolVersion"`
+		}
+		if json.Unmarshal(init, &ir) != nil || ir.ProtocolVersion == "" {
+			return nil, errors.New("pcb initialize: no protocol version in the answer")
+		}
+		c.version = ir.ProtocolVersion
 		if _, err := c.rpc(ctx, "notifications/initialized", nil, false); err != nil {
 			return nil, fmt.Errorf("pcb initialized: %w", err)
 		}
@@ -146,7 +159,9 @@ func (c *Client) rpc(ctx context.Context, method string, params any, wantReply b
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	if c.session != "" {
 		req.Header.Set("Mcp-Session-Id", c.session)
-		req.Header.Set("MCP-Protocol-Version", protocolVersion)
+	}
+	if c.version != "" {
+		req.Header.Set("MCP-Protocol-Version", c.version)
 	}
 	resp, err := c.hc.Do(req)
 	if err != nil {
@@ -175,7 +190,7 @@ func (c *Client) rpc(ctx context.Context, method string, params any, wantReply b
 			return nil, rerr
 		}
 		if err = json.Unmarshal(b, &out); err == nil {
-			found = out.ID != nil && *out.ID == *msg.ID
+			found = out.Method == "" && out.ID != nil && *out.ID == *msg.ID
 		}
 	}
 	if err != nil {
@@ -200,7 +215,7 @@ func readSSE(r io.Reader, id int) (rpcResponse, bool, error) {
 			return rpcResponse{}, false
 		}
 		var m rpcResponse
-		if json.Unmarshal([]byte(strings.Join(data, "\n")), &m) != nil {
+		if json.Unmarshal([]byte(strings.Join(data, "\n")), &m) != nil || m.Method != "" {
 			return rpcResponse{}, false
 		}
 		return m, m.ID != nil && *m.ID == id

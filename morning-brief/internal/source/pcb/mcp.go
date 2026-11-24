@@ -36,7 +36,8 @@ type Client struct {
 }
 
 // New builds a client. caFile, when set, is the only CA trusted for the server's certificate.
-// base supplies the timeout (nil = 10 s); its transport is replaced.
+// base supplies the timeout (nil = 10 s); its transport is replaced, except a recording wrapper
+// (brief.NewRecordingTransport), which is kept in front of the new one.
 func New(base *http.Client, url, token, caFile string) (*Client, error) {
 	if !strings.HasPrefix(url, "https://") {
 		return nil, errors.New("sources.pcb_url must be an https:// URL")
@@ -56,6 +57,12 @@ func New(base *http.Client, url, token, caFile string) (*Client, error) {
 	hc := &http.Client{Transport: tr, Timeout: 10 * time.Second}
 	if base != nil && base.Timeout > 0 {
 		hc.Timeout = base.Timeout
+	}
+	// a recording (or replaying) base transport stays in front of the pinned one
+	if w, ok := baseTransport(base).(interface {
+		WrapNext(http.RoundTripper) http.RoundTripper
+	}); ok {
+		hc.Transport = w.WrapNext(tr)
 	}
 	return &Client{url: url, token: token, hc: hc}, nil
 }
@@ -244,4 +251,11 @@ func unwrapURL(err error) error {
 		return ue.Unwrap()
 	}
 	return err
+}
+
+func baseTransport(base *http.Client) http.RoundTripper {
+	if base == nil {
+		return nil
+	}
+	return base.Transport
 }

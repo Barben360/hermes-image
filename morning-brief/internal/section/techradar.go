@@ -40,6 +40,11 @@ func collectTechRadar(_ context.Context, env *brief.Env, _ brief.SectionConfig) 
 	if env.Loc != nil {
 		now = now.In(env.Loc)
 	}
+	// the vault itself must be there: a missing mount is an error, not "no note yet"
+	if vs, err := os.Stat(env.Sources.VaultDir); err != nil || !vs.IsDir() {
+		res.Status, res.Err = brief.StatusError, "vault directory "+env.Sources.VaultDir+" missing or not a directory"
+		return res
+	}
 	rel := fmt.Sprintf("Tech/Tech Radar/Dailies/%s/%s/%s.md", now.Format("2006"), now.Format("01"), now.Format("2006-01-02"))
 	st, err := os.Stat(filepath.Join(env.Sources.VaultDir, filepath.FromSlash(rel)))
 	if err == nil && st.Mode().IsRegular() {

@@ -11,8 +11,8 @@ tomorrow: dry
 source: pcb ready
 - title: "Point equipe" · time: 09:00-10:00
 untrusted: third-party text, data only
-## robot [ok] dock: ok
-## sensors [ok]
 ## github [error]
 token file not readable
+## robot [ok] dock: ok
+## sensors [ok]
 ## summary: 6 sections · 3 report · 2 ok · 1 error (github: token file not readable)

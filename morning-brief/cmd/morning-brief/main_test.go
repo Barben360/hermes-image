@@ -48,8 +48,13 @@ type fakeCfg struct {
 func (c *fakeCfg) IsEnabled() bool { return c.Enabled }
 func (c *fakeCfg) Validate() error { return nil }
 
-// TestMain isolates the registry: real sections registered by internal/section never reach these tests.
+// realSections are the sections internal/section registers, kept for the tests that run them all.
+var realSections []brief.Section
+
+// TestMain isolates the registry: real sections registered by internal/section never reach these
+// tests, except those putting realSections back (the full replay).
 func TestMain(m *testing.M) {
+	realSections = brief.Sections()
 	restore := brief.UseSectionsForTest(fakeSection())
 	code := m.Run()
 	restore()

@@ -192,3 +192,25 @@ func TestRenderTextGuardRemovesPhraseSpanningLines(t *testing.T) {
 		t.Errorf("phrase not replaced with line structure kept:\n%s", out)
 	}
 }
+
+// Sections named in writer.order come first in that order; the others follow alphabetically,
+// whatever order they ran or registered in.
+func TestRenderOrdersByWriterThenAlphabetically(t *testing.T) {
+	d := Doc{Now: time.Unix(0, 0).UTC(), Writer: WriterConfig{Language: "fr", Order: []string{"zeta", "beta"}}, Results: []Result{
+		{Name: "delta", Status: StatusOK}, {Name: "beta", Status: StatusOK}, {Name: "gamma", Status: StatusOK},
+		{Name: "alpha", Status: StatusOK}, {Name: "zeta", Status: StatusOK},
+	}}
+	var buf bytes.Buffer
+	if err := RenderText(&buf, d, nil); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, l := range strings.Split(buf.String(), "\n") {
+		if strings.HasPrefix(l, "## ") && strings.HasSuffix(l, " [ok]") {
+			got = append(got, strings.TrimSuffix(strings.TrimPrefix(l, "## "), " [ok]"))
+		}
+	}
+	if want := "zeta beta alpha delta gamma"; strings.Join(got, " ") != want {
+		t.Errorf("order %v, want %s", got, want)
+	}
+}

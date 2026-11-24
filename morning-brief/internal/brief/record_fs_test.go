@@ -169,3 +169,108 @@ func TestRecordedBodyDropsCoordinatesAndFailsLoudlyOnSaveError(t *testing.T) {
 		t.Error("record failure must fail the request")
 	}
 }
+
+// A recording replays whatever host the sources are configured at: the key is section, method and
+// path (a morpheus recording replays on a laptop, a fake's random port does not matter).
+func TestReplayIgnoresSourceHost(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("from-fake")) }))
+	dir := t.TempDir()
+	live := &http.Client{Transport: NewRecordingTransport(nil, NewDirRecorder(dir, NewSecrets(t.TempDir()), false))}
+	resp, err := live.Get(srv.URL + "/api/states")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	srv.Close()
+	rp := &http.Client{Transport: NewRecordingTransport(nil, NewDirRecorder(dir, NewSecrets(t.TempDir()), true))}
+	resp, err = rp.Get("http://ha.example.test:8123/api/states")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if string(b) != "from-fake" {
+		t.Errorf("replay on another host: %q", b)
+	}
+}
+
+func TestReplaying(t *testing.T) {
+	if !Replaying(NewDirRecorder(t.TempDir(), nil, true)) || Replaying(NewDirRecorder(t.TempDir(), nil, false)) || Replaying(nil) {
+		t.Error("Replaying is wrong")
+	}
+}
+
+type countingRT struct{ n int }
+
+func (c *countingRT) RoundTrip(r *http.Request) (*http.Response, error) {
+	c.n++
+	return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("inner")), Header: http.Header{}, Request: r}, nil
+}
+
+// A source that needs its own transport (pcb: a pinned CA) keeps recording and replaying through WrapNext.
+func TestWrapNextKeepsRecording(t *testing.T) {
+	dir := t.TempDir()
+	wrap := func(rec Recorder, inner http.RoundTripper) http.RoundTripper {
+		w, ok := NewRecordingTransport(nil, rec).(interface {
+			WrapNext(http.RoundTripper) http.RoundTripper
+		})
+		if !ok {
+			t.Fatal("the recording transport has no WrapNext")
+		}
+		return w.WrapNext(inner)
+	}
+	inner := &countingRT{}
+	c := &http.Client{Transport: wrap(NewDirRecorder(dir, NewSecrets(t.TempDir()), false), inner)}
+	resp, err := c.Get("https://pcb.example.test/mcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if inner.n != 1 {
+		t.Fatalf("inner transport called %d times", inner.n)
+	}
+	inner2 := &countingRT{}
+	c = &http.Client{Transport: wrap(NewDirRecorder(dir, NewSecrets(t.TempDir()), true), inner2)}
+	resp, err = c.Get("https://pcb.example.test/mcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if string(b) != "inner" || inner2.n != 0 {
+		t.Errorf("replay through WrapNext: %q, inner called %d times", b, inner2.n)
+	}
+}
+
+// The headers a source reads (pcb's SSE Content-Type, GitHub's Link paging) replay too; no other
+// header is kept (cookies, session ids).
+func TestReplayKeepsContentTypeAndLinkOnly(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Link", `<https://api.example.test/user/repos?page=7>; rel="last"`)
+		w.Header().Set("Set-Cookie", "session=cookie-value-1")
+		w.Header().Set("Mcp-Session-Id", "sess-value-2")
+		w.Write([]byte("data: {}\n\n"))
+	}))
+	dir := t.TempDir()
+	live := &http.Client{Transport: NewRecordingTransport(nil, NewDirRecorder(dir, NewSecrets(t.TempDir()), false))}
+	resp, err := live.Get(srv.URL + "/x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	srv.Close()
+	files, _ := filepath.Glob(filepath.Join(dir, "*"))
+	if all := readAll(t, files); strings.Contains(all, "cookie-value-1") || strings.Contains(all, "sess-value-2") {
+		t.Errorf("recorded a header it must not: %s", all)
+	}
+	rp := &http.Client{Transport: NewRecordingTransport(nil, NewDirRecorder(dir, NewSecrets(t.TempDir()), true))}
+	resp, err = rp.Get(srv.URL + "/x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.Header.Get("Content-Type") != "text/event-stream" || !strings.Contains(resp.Header.Get("Link"), "page=7") {
+		t.Errorf("replayed headers %v", resp.Header)
+	}
+}

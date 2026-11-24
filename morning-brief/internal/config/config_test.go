@@ -162,7 +162,7 @@ func TestInvalidWriterKeepsDefaultWriter(t *testing.T) {
 	if len(l.TopErrors) != 1 || !strings.Contains(l.TopErrors[0], "writer") {
 		t.Fatalf("top errors %v", l.TopErrors)
 	}
-	if l.Writer.Language != "fr" || len(l.Writer.Order) != 0 {
+	if l.Writer.Language != "fr" || strings.Join(l.Writer.Order, ",") != strings.Join(specOrder, ",") {
 		t.Errorf("%+v", l.Writer)
 	}
 }
@@ -277,5 +277,21 @@ func TestEffectiveShowsMergedConfig(t *testing.T) {
 		if !strings.Contains(s, want) {
 			t.Errorf("missing %q in\n%s", want, s)
 		}
+	}
+}
+
+// specOrder is the spec's section order, the default writer.order.
+var specOrder = []string{"weather", "calendar", "car", "robot", "sensors", "energy", "home", "alerts", "expiries",
+	"mail", "github", "deepseek", "bugsink", "pet_feeder", "presence", "tech_radar"}
+
+func TestDefaultWriterOrderIsSpecOrder(t *testing.T) {
+	l := Load(filepath.Join(t.TempDir(), "nope.yaml"), fakeSections())
+	if strings.Join(l.Writer.Order, ",") != strings.Join(specOrder, ",") {
+		t.Errorf("default order %v", l.Writer.Order)
+	}
+	// a writer block without order keeps the default order, even when the known sections differ
+	l = Load(writeFile(t, "writer:\n  notes: car first\n"), fakeSections())
+	if len(l.TopErrors) != 0 || l.Writer.Notes != "car first" || strings.Join(l.Writer.Order, ",") != strings.Join(specOrder, ",") {
+		t.Errorf("%v %+v", l.TopErrors, l.Writer)
 	}
 }

@@ -164,7 +164,7 @@ func loadMap(top map[string]yaml.Node, sections []brief.Section, broken string) 
 		w := d.Writer
 		if err := strictDecode(n, &w); err != nil {
 			r.writerErr = oneLine(err.Error())
-		} else if err := checkWriter(w, sections); err != nil {
+		} else if err := checkWriter(w, sections, hasKey(n, "order")); err != nil {
 			r.writerErr = err.Error()
 		} else {
 			r.writer = w
@@ -197,9 +197,14 @@ func loadMap(top map[string]yaml.Node, sections []brief.Section, broken string) 
 	return r
 }
 
-func checkWriter(w writerYAML, sections []brief.Section) error {
+// checkWriter validates the owner's writer block; the order is checked only when the file sets it
+// (the default order names the real sections, which a test registry may not have).
+func checkWriter(w writerYAML, sections []brief.Section, ownOrder bool) error {
 	if strings.TrimSpace(w.Language) == "" {
 		return errors.New("language must not be empty")
+	}
+	if !ownOrder {
+		return nil
 	}
 	have := map[string]bool{}
 	for _, s := range sections {
@@ -211,6 +216,16 @@ func checkWriter(w writerYAML, sections []brief.Section) error {
 		}
 	}
 	return nil
+}
+
+// hasKey reports whether the mapping node n has the key k.
+func hasKey(n yaml.Node, k string) bool {
+	for i := 0; n.Kind == yaml.MappingNode && i+1 < len(n.Content); i += 2 {
+		if n.Content[i].Value == k {
+			return true
+		}
+	}
+	return false
 }
 
 // sectionConfig returns the section's config and, when it is invalid, the error (config is then its default).

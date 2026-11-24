@@ -1,0 +1,9 @@
+{
+  "co2_signal_entity": null,
+  "cost_sensors": {
+    "sensor.gas_filtered": "sensor.gas_filtered_cost_2",
+    "sensor.meter_base": "sensor.meter_base_cost",
+    "sensor.meter_offpeak": "sensor.meter_offpeak_cost"
+  },
+  "solar_forecast_domains": []
+}

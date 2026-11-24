@@ -16,9 +16,16 @@ const maxWSMessage = 32 << 20
 
 // WSConn is an authenticated Home Assistant WebSocket session. Commands run one at a time.
 type WSConn struct {
-	conn *websocket.Conn
-	id   int
-	rec  Recorder
+	conn   *websocket.Conn
+	id     int
+	rec    Recorder
+	replay bool // answers come from rec, conn is nil
+}
+
+// replaying reports whether rec serves recorded answers (brief.Replaying, repeated: brief imports this package).
+func replaying(rec Recorder) bool {
+	r, ok := rec.(interface{ Replaying() bool })
+	return ok && r.Replaying()
 }
 
 // DayValue is one day's change of a statistic, the day starting at Start.
@@ -40,7 +47,11 @@ func (c *Client) wsURL() string {
 }
 
 // WS connects and authenticates with the token, dialing through c.Dial when set (Env.Dial).
+// In replay (c.Rec replaying) it connects to nothing: every command answers from the recording.
 func (c *Client) WS(ctx context.Context) (*WSConn, error) {
+	if replaying(c.Rec) {
+		return &WSConn{rec: c.Rec, replay: true}, nil
+	}
 	hc := &http.Client{}
 	if c.HTTP != nil {
 		hc.Transport = c.HTTP.Transport // same TLS settings as the REST calls
@@ -85,7 +96,11 @@ func (c *Client) WS(ctx context.Context) (*WSConn, error) {
 }
 
 // Close ends the session.
-func (w *WSConn) Close() { _ = w.conn.Close(websocket.StatusNormalClosure, "") }
+func (w *WSConn) Close() {
+	if w.conn != nil {
+		_ = w.conn.Close(websocket.StatusNormalClosure, "")
+	}
+}
 
 func (w *WSConn) write(ctx context.Context, v any) error {
 	b, err := json.Marshal(v)
@@ -143,10 +158,23 @@ func ctxOrGeneric(ctx context.Context) string {
 	return "connection closed"
 }
 
-func (w *WSConn) save(name string, raw json.RawMessage) {
+// command runs cmd and records its answer under name; in replay it returns the recorded answer.
+func (w *WSConn) command(ctx context.Context, name string, cmd map[string]any) (json.RawMessage, error) {
+	if w.replay {
+		var raw json.RawMessage
+		if err := w.rec.Load(name, &raw); err != nil {
+			return nil, fmt.Errorf("Home Assistant: %v", err)
+		}
+		return raw, nil
+	}
+	raw, err := w.call(ctx, cmd)
+	if err != nil {
+		return nil, err
+	}
 	if w.rec != nil {
 		_ = w.rec.Save(name, raw)
 	}
+	return raw, nil
 }
 
 // FlowFrom is one consumption source of the Energy panel's grid.
@@ -175,11 +203,10 @@ type EnergyInfo struct {
 
 // EnergyPrefs reads energy/get_prefs.
 func (w *WSConn) EnergyPrefs(ctx context.Context) (*EnergyPrefs, error) {
-	raw, err := w.call(ctx, map[string]any{"type": "energy/get_prefs"})
+	raw, err := w.command(ctx, "ha_energy_prefs", map[string]any{"type": "energy/get_prefs"})
 	if err != nil {
 		return nil, err
 	}
-	w.save("ha_energy_prefs", raw)
 	var p EnergyPrefs
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return nil, fmt.Errorf("Home Assistant: energy/get_prefs answer unreadable")
@@ -189,11 +216,10 @@ func (w *WSConn) EnergyPrefs(ctx context.Context) (*EnergyPrefs, error) {
 
 // EnergyInfo reads energy/info.
 func (w *WSConn) EnergyInfo(ctx context.Context) (*EnergyInfo, error) {
-	raw, err := w.call(ctx, map[string]any{"type": "energy/info"})
+	raw, err := w.command(ctx, "ha_energy_info", map[string]any{"type": "energy/info"})
 	if err != nil {
 		return nil, err
 	}
-	w.save("ha_energy_info", raw)
 	var i EnergyInfo
 	if err := json.Unmarshal(raw, &i); err != nil {
 		return nil, fmt.Errorf("Home Assistant: energy/info answer unreadable")
@@ -203,7 +229,7 @@ func (w *WSConn) EnergyInfo(ctx context.Context) (*EnergyInfo, error) {
 
 // DailyChange returns, per statistic id, the change of each day in [from, to). A statistic with no data is absent.
 func (w *WSConn) DailyChange(ctx context.Context, statIDs []string, from, to time.Time) (map[string][]DayValue, error) {
-	raw, err := w.call(ctx, map[string]any{
+	raw, err := w.command(ctx, "ha_energy_stats", map[string]any{
 		"type":          "recorder/statistics_during_period",
 		"start_time":    from.UTC().Format(time.RFC3339),
 		"end_time":      to.UTC().Format(time.RFC3339),
@@ -215,7 +241,6 @@ func (w *WSConn) DailyChange(ctx context.Context, statIDs []string, from, to tim
 	if err != nil {
 		return nil, err
 	}
-	w.save("ha_energy_stats", raw)
 	var wire map[string][]struct {
 		Start  json.RawMessage `json:"start"`
 		Change *float64        `json:"change"`

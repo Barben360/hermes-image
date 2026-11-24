@@ -382,3 +382,32 @@ func TestEnergyAcrossDSTChange(t *testing.T) {
 		t.Fatalf("window %v .. %v", req["start_time"], req["end_time"])
 	}
 }
+
+// The WebSocket answers are recorded and, in replay, served without dialing.
+func TestEnergyRecordsAndReplays(t *testing.T) {
+	loc, _ := time.LoadLocation("Europe/Paris")
+	f := &fakeHA{stats: defaultStats()}
+	srv := f.serve(t, loc)
+	env := energyEnv(t, srv)
+	dir := t.TempDir()
+	env.Rec = brief.NewDirRecorder(dir, env.Secrets, false)
+	live := collect(t, "energy", env, newEnergyConfig())
+	if live.Status != brief.StatusReport {
+		t.Fatalf("live: %s %q", live.Status, live.Err)
+	}
+	srv.Close()
+	env.Rec = brief.NewDirRecorder(dir, env.Secrets, true)
+	env.Dial = func(context.Context, string, string) (net.Conn, error) {
+		t.Error("replay dialed")
+		return nil, context.Canceled
+	}
+	got := collect(t, "energy", env, newEnergyConfig())
+	if dump(got) != dump(live) || got.Status != live.Status {
+		t.Errorf("replay %s %q:\n%s\nlive:\n%s", got.Status, got.Err, dump(got), dump(live))
+	}
+	// a replay missing the recording is an error, never a dial
+	env.Rec = brief.NewDirRecorder(t.TempDir(), env.Secrets, true)
+	if r := collect(t, "energy", env, newEnergyConfig()); r.Status != brief.StatusError {
+		t.Errorf("empty recording: %s", r.Status)
+	}
+}

@@ -66,12 +66,19 @@ func collectMailSection(ctx context.Context, env *brief.Env, c *MailConfig) brie
 	if now.IsZero() {
 		now = time.Now()
 	}
-	msgs, err := imapsrc.Unread(ctx, imapsrc.Dialer(env.Dial), acct, pw, c.Folders, now.Add(-time.Duration(c.Hours)*time.Hour))
-	if err != nil {
-		return fail(err)
-	}
-	if env.Rec != nil {
-		_ = env.Rec.Save("mail", msgs)
+	var msgs []imapsrc.Message
+	if brief.Replaying(env.Rec) { // IMAP is not HTTP: the headers recorded by --record stand for the server
+		if err := env.Rec.Load("mail", &msgs); err != nil {
+			return fail(err)
+		}
+	} else {
+		msgs, err = imapsrc.Unread(ctx, imapsrc.Dialer(env.Dial), acct, pw, c.Folders, now.Add(-time.Duration(c.Hours)*time.Hour))
+		if err != nil {
+			return fail(err)
+		}
+		if env.Rec != nil {
+			_ = env.Rec.Save("mail", msgs)
+		}
 	}
 	var items []brief.Item
 	dropped := 0

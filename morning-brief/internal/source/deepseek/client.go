@@ -58,8 +58,14 @@ func (c *Client) Balance(ctx context.Context) (Balance, error) {
 	if resp.StatusCode != http.StatusOK {
 		return b, fmt.Errorf("deepseek: HTTP %d on /user/balance", resp.StatusCode)
 	}
-	if err := json.Unmarshal(body, &b); err != nil {
+	// is_available is required: without it, an empty object would read as an unavailable account
+	var wire struct {
+		IsAvailable  *bool  `json:"is_available"`
+		BalanceInfos []Info `json:"balance_infos"`
+	}
+	if err := json.Unmarshal(body, &wire); err != nil || wire.IsAvailable == nil {
 		return b, fmt.Errorf("deepseek: bad balance answer")
 	}
+	b.IsAvailable, b.BalanceInfos = *wire.IsAvailable, wire.BalanceInfos
 	return b, nil
 }

@@ -108,3 +108,23 @@ func TestTechRadarStatErrorIsError(t *testing.T) {
 		t.Fatalf("status %s", r.Status)
 	}
 }
+
+// A vault that is not there (volume not mounted) is an error, never "no note yet".
+func TestTechRadarVaultMissingIsError(t *testing.T) {
+	for _, vault := range []string{filepath.Join(t.TempDir(), "nope"), writeTemp(t)} {
+		env := b11Env(t, nil, brief.Sources{VaultDir: vault})
+		r := b11Section(t, "tech_radar").Collect(t.Context(), env, techRadarDefault())
+		if r.Status != brief.StatusError || !strings.Contains(r.Err, "vault") {
+			t.Errorf("%s: status %s err %q", vault, r.Status, r.Err)
+		}
+	}
+}
+
+// writeTemp returns a regular file, standing for a vault path that is not a directory.
+func writeTemp(t *testing.T) string {
+	p := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(p, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}

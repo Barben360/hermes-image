@@ -1,0 +1,9 @@
+{
+  "body": "{\"id\":1,\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{},\"protocolVersion\":\"2025-06-18\",\"serverInfo\":{\"name\":\"pcb\"}}}\n",
+  "header": {
+    "Content-Type": "application/json"
+  },
+  "method": "POST",
+  "path": "/mcp",
+  "status": 200
+}

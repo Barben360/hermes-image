@@ -456,3 +456,30 @@ func TestMailRegistered(t *testing.T) {
 	}
 	t.Fatal("mail not registered")
 }
+
+// --record keeps the headers read over IMAP; --replay serves them (filters applied again) without dialing.
+func TestMailRecordsAndReplays(t *testing.T) {
+	r := newMailRig(t, []mailMsg{
+		{from: "Alice <alice@example.org>", subject: "hello", received: hoursAgo(2)},
+		{from: "Shop <news@shop.example.org>", subject: "promo", extra: "List-Id: <x.shop.example.org>\r\n", received: hoursAgo(3)},
+	})
+	dir := t.TempDir()
+	r.env.Rec = brief.NewDirRecorder(dir, r.env.Secrets, false)
+	live := collectMail(t, r.env, nil)
+	if live.Status != brief.StatusReport {
+		t.Fatalf("live: %s %q", live.Status, live.Err)
+	}
+	r.env.Rec = brief.NewDirRecorder(dir, r.env.Secrets, true)
+	r.env.Dial = func(context.Context, string, string) (net.Conn, error) {
+		t.Error("replay dialed")
+		return nil, context.Canceled
+	}
+	got := collectMail(t, r.env, nil)
+	if itemsText(got) != itemsText(live) || dump(got) != dump(live) {
+		t.Errorf("replay:\n%s%s\nlive:\n%s%s", dump(got), itemsText(got), dump(live), itemsText(live))
+	}
+	r.env.Rec = brief.NewDirRecorder(t.TempDir(), r.env.Secrets, true)
+	if res := collectMail(t, r.env, nil); res.Status != brief.StatusError {
+		t.Errorf("empty recording: %s", res.Status)
+	}
+}

@@ -1,0 +1,9 @@
+{
+  "body": "{\"id\":3,\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"calendars\\\":[{\\\"id\\\":\\\"cal-main\\\",\\\"type\\\":\\\"normal\\\",\\\"untrusted\\\":{\\\"name\\\":\\\"Personal\\\"}},{\\\"id\\\":\\\"cal-family\\\",\\\"type\\\":\\\"normal\\\",\\\"untrusted\\\":{\\\"name\\\":\\\"Family\\\"}},{\\\"id\\\":\\\"cal-holidays\\\",\\\"type\\\":\\\"holidays\\\",\\\"untrusted\\\":{\\\"name\\\":\\\"Public holidays\\\"}},{\\\"id\\\":\\\"cal-sports\\\",\\\"type\\\":\\\"subscribed\\\",\\\"untrusted\\\":{\\\"name\\\":\\\"Sports fixtures\\\"}}]}\",\"type\":\"text\"}],\"structuredContent\":{\"calendars\":[{\"id\":\"cal-main\",\"type\":\"normal\",\"untrusted\":{\"name\":\"Personal\"}},{\"id\":\"cal-family\",\"type\":\"normal\",\"untrusted\":{\"name\":\"Family\"}},{\"id\":\"cal-holidays\",\"type\":\"holidays\",\"untrusted\":{\"name\":\"Public holidays\"}},{\"id\":\"cal-sports\",\"type\":\"subscribed\",\"untrusted\":{\"name\":\"Sports fixtures\"}}]}}}\n",
+  "header": {
+    "Content-Type": "application/json"
+  },
+  "method": "POST",
+  "path": "/mcp",
+  "status": 200
+}

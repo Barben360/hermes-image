@@ -34,6 +34,7 @@ type summary struct {
 	Errors                      []string
 }
 
+// ordered puts the sections named in writer.order first, in that order, then the others alphabetically.
 func ordered(d Doc) []Result {
 	rs := append([]Result(nil), d.Results...)
 	rank := map[string]int{}
@@ -48,10 +49,10 @@ func ordered(d Doc) []Result {
 		switch {
 		case iok && jok:
 			return ri < rj
-		case iok:
-			return true
-		default:
-			return false
+		case iok != jok:
+			return iok
+		default: // neither listed: alphabetically
+			return rs[i].Name < rs[j].Name
 		}
 	})
 	return rs
@@ -198,6 +199,7 @@ type jsonResult struct {
 }
 
 // RenderJSON prints the same content as RenderText, for tests and debugging; disabled sections are included.
+// It is not covered by the scanner guard (guardScanner): never feed its output to the agent.
 func RenderJSON(w io.Writer, d Doc, s *Secrets) error {
 	conv := func(fs []Fact) []jsonFact {
 		out := make([]jsonFact, len(fs))

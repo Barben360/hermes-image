@@ -1,0 +1,9 @@
+{
+  "body": "[{\"annotations\":{},\"labels\":{\"alertname\":\"Watchdog\",\"severity\":\"none\"},\"startsAt\":\"2026-11-20T00:00:00Z\",\"status\":{\"state\":\"active\"}},{\"annotations\":{\"summary\":\"Backup of example failed\"},\"labels\":{\"alertname\":\"HomelabAlert\",\"key\":\"backup:example\",\"severity\":\"warning\"},\"startsAt\":\"2026-11-25T02:12:00Z\",\"status\":{\"state\":\"active\"}},{\"annotations\":{\"summary\":\"example/image 1.2.4 is available\"},\"labels\":{\"alertname\":\"HomelabImageOutdated\",\"key\":\"outdated:example/image:1.2.3\",\"severity\":\"info\"},\"startsAt\":\"2026-11-24T06:00:00Z\",\"status\":{\"state\":\"active\"}}]\n",
+  "header": {
+    "Content-Type": "application/json"
+  },
+  "method": "GET",
+  "path": "/api/alertmanager/alertmanager/api/v2/alerts",
+  "status": 200
+}

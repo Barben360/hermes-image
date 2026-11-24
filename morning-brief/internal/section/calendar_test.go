@@ -712,3 +712,25 @@ func TestCalendarRefusesNonHTTPSURL(t *testing.T) {
 		t.Fatal("a request was made")
 	}
 }
+
+// pcb's own transport (pinned CA) still goes through the recorder: --record keeps the calendar and
+// --replay serves it with pcb gone.
+func TestCalendarRecordsAndReplays(t *testing.T) {
+	f := newFakePCB(t, "status-ready.json")
+	env := f.env(t, "2026-11-24T07:15")
+	dir := t.TempDir()
+	env.HTTP = &http.Client{Transport: brief.NewRecordingTransport(nil, brief.NewDirRecorder(dir, env.Secrets, false))}
+	live := collectCal(t, env, nil)
+	if live.Status != brief.StatusReport {
+		t.Fatalf("live: %s %q", live.Status, live.Err)
+	}
+	if files, _ := filepath.Glob(filepath.Join(dir, "*")); len(files) == 0 {
+		t.Fatal("nothing recorded")
+	}
+	f.srv.Close()
+	env.HTTP = &http.Client{Transport: brief.NewRecordingTransport(nil, brief.NewDirRecorder(dir, env.Secrets, true))}
+	got := collectCal(t, env, nil)
+	if render(t, env, got) != render(t, env, live) {
+		t.Errorf("replay differs:\n%s\nlive:\n%s", render(t, env, got), render(t, env, live))
+	}
+}

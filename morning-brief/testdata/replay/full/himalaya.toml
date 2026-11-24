@@ -1,0 +1,8 @@
+# Synthetic himalaya config for the replay fixture: the replay never connects.
+[accounts.main]
+default = true
+email = "owner@example.test"
+imap.server = "imap://imap.example.test:143"
+imap.starttls = false
+imap.sasl.plain.username = "owner@example.test"
+imap.sasl.plain.password.command = "cat /run/secrets/mail_password"

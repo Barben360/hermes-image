@@ -2,7 +2,8 @@
 # Sections' own defaults live in their Go code (see `morning-brief sections`).
 writer:
   language: fr
-  order: []
+  # the spec's order; sections not listed print after these, alphabetically
+  order: [weather, calendar, car, robot, sensors, energy, home, alerts, expiries, mail, github, deepseek, bugsink, pet_feeder, presence, tech_radar]
   notes: ""
 sources:
   ha_url: ha.bbarrois.tech

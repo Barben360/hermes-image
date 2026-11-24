@@ -115,3 +115,13 @@ func TestDeepSeekOddAnswersAreErrors(t *testing.T) {
 		}
 	}
 }
+
+// An answer without is_available (an empty object, a proxy's JSON error) is not an unavailable account.
+func TestDeepSeekAnswerWithoutAvailabilityIsError(t *testing.T) {
+	for _, body := range []string{`{}`, `{"balance_infos":[]}`, `{"error":{"message":"x"}}`} {
+		r, _ := dsRun(t, 200, body)
+		if r.Status != brief.StatusError || !strings.Contains(r.Err, "deepseek") {
+			t.Errorf("%s: status %s err %q facts %+v", body, r.Status, r.Err, r.Facts)
+		}
+	}
+}

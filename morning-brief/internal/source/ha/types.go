@@ -1,4 +1,4 @@
-// Package ha holds Home Assistant types shared by sections; the client is in client.go (later task).
+// Package ha holds the Home Assistant REST client and the types sections share.
 package ha
 
 import "time"

@@ -46,16 +46,20 @@ func Run(ctx context.Context, env *Env, p Plan) []Result {
 
 	results := make([]Result, len(secs))
 	chans := make([]chan Result, len(secs))
+	// one hard deadline for every section, taken at launch: waits never stack
+	hard, hardCancel := context.WithTimeout(ctx, secTO+250*time.Millisecond)
+	defer hardCancel()
 	for i, s := range secs {
 		if msg, bad := p.ConfigErrors[s.Name]; bad {
 			results[i] = Result{Name: s.Name, Status: StatusError, Err: "config: " + msg}
 			continue
 		}
-		cfg, ok := p.Configs[s.Name]
-		if !ok && s.Default != nil {
-			cfg = s.Default()
+		cfg, enabled, err := resolve(s, p)
+		if err != nil {
+			results[i] = Result{Name: s.Name, Status: StatusError, Err: err.Error()}
+			continue
 		}
-		if cfg == nil || !cfg.IsEnabled() {
+		if !enabled {
 			results[i] = Result{Name: s.Name, Status: StatusDisabled}
 			continue
 		}
@@ -74,16 +78,18 @@ func Run(ctx context.Context, env *Env, p Plan) []Result {
 		select {
 		case r := <-ch:
 			results[i] = r
-		case <-ctx.Done():
-			// the run deadline passed: take a result already there, else timeout
+		case <-hard.Done():
+			// deadline passed: take a result already there, else timeout
 			select {
 			case r := <-ch:
 				results[i] = r
 			default:
-				results[i] = Result{Name: secs[i].Name, Status: StatusError, Err: "timeout: run exceeded " + runTO.String()}
+				msg := "timeout after " + secTO.String()
+				if ctx.Err() != nil {
+					msg = "timeout: run exceeded " + runTO.String()
+				}
+				results[i] = Result{Name: secs[i].Name, Status: StatusError, Err: msg}
 			}
-		case <-time.After(secTO + 250*time.Millisecond):
-			results[i] = Result{Name: secs[i].Name, Status: StatusError, Err: "timeout after " + secTO.String()}
 		}
 	}
 	for i := range results {
@@ -97,6 +103,23 @@ func Run(ctx context.Context, env *Env, p Plan) []Result {
 		}
 	}
 	return results
+}
+
+// resolve picks a section's config and enabled state, recovering a panic in user code.
+func resolve(s Section, p Plan) (cfg SectionConfig, enabled bool, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			cfg, enabled, err = nil, false, fmt.Errorf("panic: %v", r)
+		}
+	}()
+	cfg, ok := p.Configs[s.Name]
+	if !ok && s.Default != nil {
+		cfg = s.Default()
+	}
+	if cfg == nil {
+		return nil, false, nil
+	}
+	return cfg, cfg.IsEnabled(), nil
 }
 
 func collectSafe(ctx context.Context, env *Env, s Section, cfg SectionConfig) (r Result) {

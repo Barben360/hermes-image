@@ -81,3 +81,10 @@ func TestNilSecretsScrubIsIdentity(t *testing.T) {
 		t.Fail()
 	}
 }
+
+func TestNilSecretsReadErrors(t *testing.T) {
+	var s *Secrets
+	if _, err := s.Read("x"); err == nil {
+		t.Error("want error")
+	}
+}

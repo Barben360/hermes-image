@@ -21,6 +21,9 @@ func NewSecrets(dir string) *Secrets { return &Secrets{dir: dir} }
 
 // Read returns the file's content without trailing whitespace. Errors name the file, never a value.
 func (s *Secrets) Read(name string) (string, error) {
+	if s == nil {
+		return "", fmt.Errorf("secret file %q: no secrets directory", name)
+	}
 	if name == "" || name != filepath.Base(name) || name == "." || name == ".." {
 		return "", fmt.Errorf("secret file %q: invalid name", name)
 	}

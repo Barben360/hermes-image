@@ -69,7 +69,7 @@ func summarize(rs []Result, s *Secrets) summary {
 			sm.OK++
 		case StatusError:
 			sm.Error++
-			sm.Errors = append(sm.Errors, r.Name+": "+s.Scrub(r.Err))
+			sm.Errors = append(sm.Errors, oneLine(s.Scrub(r.Name))+": "+oneLine(s.Scrub(r.Err)))
 		}
 		sm.Sections++
 	}
@@ -79,10 +79,9 @@ func summarize(rs []Result, s *Secrets) summary {
 func factText(f Fact, s *Secrets) string {
 	v := s.Scrub(f.Value)
 	if f.Untrusted {
-		b, _ := json.Marshal(v) // a string always marshals; v is already scrubbed
-		v = string(b)
+		v = jsonString(v) // v is already scrubbed
 	}
-	out := f.Key + ": " + v
+	out := oneLine(s.Scrub(f.Key)) + ": " + v
 	if !f.AsOf.IsZero() {
 		out += " (as_of " + f.AsOf.Format(asOfLayout) + ")"
 	}
@@ -118,22 +117,22 @@ func RenderText(w io.Writer, d Doc, s *Secrets) error {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# morning-brief %s %s\n", d.Now.Format("2006-01-02T15:04Z07:00"), d.Now.Location())
 	for _, e := range d.TopErrors {
-		fmt.Fprintf(&b, "error: %s\n", s.Scrub(e))
+		fmt.Fprintf(&b, "error: %s\n", oneLine(s.Scrub(e)))
 	}
 	b.WriteString("## writer\n")
-	notes, _ := json.Marshal(d.Writer.Notes)
-	fmt.Fprintf(&b, "%s\n", s.Scrub(fmt.Sprintf("language: %s · order: %s · notes: %s",
-		d.Writer.Language, strings.Join(d.Writer.Order, ", "), notes)))
+	fmt.Fprintf(&b, "language: %s · order: %s · notes: %s\n",
+		oneLine(s.Scrub(d.Writer.Language)), oneLine(s.Scrub(strings.Join(d.Writer.Order, ", "))),
+		jsonString(s.Scrub(d.Writer.Notes)))
 	rs := ordered(d)
 	for _, r := range rs {
 		switch r.Status {
 		case StatusDisabled:
 			continue
 		case StatusError:
-			fmt.Fprintf(&b, "## %s [error]\n%s\n", r.Name, s.Scrub(r.Err))
+			fmt.Fprintf(&b, "## %s [error]\n%s\n", oneLine(s.Scrub(r.Name)), oneLine(s.Scrub(r.Err)))
 			continue
 		case StatusOK:
-			line := "## " + r.Name + " [ok]"
+			line := "## " + oneLine(s.Scrub(r.Name)) + " [ok]"
 			if len(r.Facts) > 0 {
 				line += " " + factsLine(r.Facts, s)
 			}
@@ -143,7 +142,7 @@ func RenderText(w io.Writer, d Doc, s *Secrets) error {
 			}
 			continue
 		}
-		fmt.Fprintf(&b, "## %s [%s]\n", r.Name, r.Status)
+		fmt.Fprintf(&b, "## %s [%s]\n", oneLine(s.Scrub(r.Name)), r.Status)
 		for _, f := range r.Facts {
 			b.WriteString(factText(f, s) + "\n")
 		}
@@ -184,7 +183,7 @@ func RenderJSON(w io.Writer, d Doc, s *Secrets) error {
 	conv := func(fs []Fact) []jsonFact {
 		out := make([]jsonFact, len(fs))
 		for i, f := range fs {
-			out[i] = jsonFact{Key: f.Key, Value: s.Scrub(f.Value), Untrusted: f.Untrusted}
+			out[i] = jsonFact{Key: s.Scrub(f.Key), Value: s.Scrub(f.Value), Untrusted: f.Untrusted}
 			if !f.AsOf.IsZero() {
 				out[i].AsOf = f.AsOf.Format(time.RFC3339)
 			}
@@ -194,7 +193,7 @@ func RenderJSON(w io.Writer, d Doc, s *Secrets) error {
 	rs := ordered(d)
 	var results []jsonResult
 	for _, r := range rs {
-		jr := jsonResult{Name: r.Name, Status: r.Status, Facts: conv(r.Facts), Err: s.Scrub(r.Err)}
+		jr := jsonResult{Name: s.Scrub(r.Name), Status: r.Status, Facts: conv(r.Facts), Err: s.Scrub(r.Err)}
 		for _, it := range r.Items {
 			jr.Items = append(jr.Items, conv(it.Facts))
 		}
@@ -205,12 +204,15 @@ func RenderJSON(w io.Writer, d Doc, s *Secrets) error {
 		tops[i] = s.Scrub(e)
 	}
 	sm := summarize(rs, s)
+	if sm.Errors == nil {
+		sm.Errors = []string{}
+	}
 	doc := map[string]any{
 		"now":        d.Now.Format(time.RFC3339),
 		"zone":       d.Now.Location().String(),
 		"top_errors": tops,
 		"writer": map[string]any{
-			"language": d.Writer.Language, "order": d.Writer.Order, "notes": s.Scrub(d.Writer.Notes),
+			"language": s.Scrub(d.Writer.Language), "order": scrubAll(d.Writer.Order, s), "notes": s.Scrub(d.Writer.Notes),
 		},
 		"results": results,
 		"summary": map[string]any{
@@ -218,6 +220,29 @@ func RenderJSON(w io.Writer, d Doc, s *Secrets) error {
 		},
 	}
 	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "  ")
 	return enc.Encode(doc)
+}
+
+// jsonString quotes v as a JSON string without HTML escaping (& < > stay as they are).
+func jsonString(v string) string {
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(v) // a string always encodes
+	return strings.TrimSuffix(b.String(), "\n")
+}
+
+// oneLine keeps a string on one line so it cannot forge a header.
+func oneLine(v string) string {
+	return strings.Join(strings.Fields(strings.NewReplacer("\r", " ", "\n", " ").Replace(v)), " ")
+}
+
+func scrubAll(in []string, s *Secrets) []string {
+	out := make([]string, len(in))
+	for i, v := range in {
+		out[i] = s.Scrub(v)
+	}
+	return out
 }

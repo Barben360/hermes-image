@@ -30,7 +30,7 @@ func main() { os.Exit(realMain(os.Args[1:], os.Stdout, os.Stderr)) }
 
 func realMain(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: morning-brief run|check|sections|config")
+		fmt.Fprintln(stderr, "usage: morning-brief run|check|sections|config|watch")
 		return 2
 	}
 	switch args[0] {
@@ -42,6 +42,8 @@ func realMain(args []string, stdout, stderr io.Writer) int {
 		return configCmd(args[1:], stdout, stderr)
 	case "sections":
 		return sectionsCmd(stdout, stderr)
+	case "watch":
+		return watchCmd(args[1:], stdout, stderr)
 	}
 	fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 	return 2
@@ -99,11 +101,27 @@ func memoHA(env *brief.Env) func(context.Context) (*ha.Snapshot, error) {
 			if token, err = env.Secrets.Read("ha_token"); err != nil {
 				return
 			}
+			// the shared fetch belongs to no one section: key its recording on "ha", not on whoever asked first
 			c := &ha.Client{BaseURL: env.Sources.HAURL, Token: token, HTTP: env.HTTP, Rec: env.Rec}
-			snap, err = c.States(ctx)
+			snap, err = c.States(brief.WithSection(ctx, "ha"))
 		})
 		return snap, err
 	}
+}
+
+// useRecorder routes the HTTP client through rec; sources that save their own answers use env.Rec.
+// In replay nothing may reach the network: raw dials (IMAP) fail.
+func useRecorder(env *brief.Env, rec brief.Recorder, replay bool) {
+	env.Rec = rec
+	if replay {
+		env.Dial = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return nil, fmt.Errorf("connection not recorded in replay")
+		}
+	}
+	hc := *env.HTTP
+	hc.Transport = brief.NewRecordingTransport(hc.Transport, rec)
+	env.HTTP = &hc
+	env.HA = memoHA(env)
 }
 
 func location() *time.Location {
@@ -122,7 +140,13 @@ func runCmd(args []string, stdout, stderr io.Writer) int {
 	only := fs.String("only", "", "comma-separated sections")
 	format := fs.String("format", "text", "text or json")
 	nowFlag := fs.String("now", "", "RFC3339 time to use instead of the clock")
+	recordDir := fs.String("record", "", "save every source answer, scrubbed, into this directory")
+	replayDir := fs.String("replay", "", "answer from a --record directory, no network")
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *recordDir != "" && *replayDir != "" {
+		fmt.Fprintln(stderr, "--record and --replay are exclusive")
 		return 2
 	}
 	if *format != "text" && *format != "json" {
@@ -142,6 +166,12 @@ func runCmd(args []string, stdout, stderr io.Writer) int {
 	loaded := config.Load(cm.config, brief.Sections())
 	secrets := brief.NewSecrets(cm.secretsDir)
 	env := newEnv(now, loc, secrets, loaded.Sources)
+	switch {
+	case *recordDir != "":
+		useRecorder(env, brief.NewDirRecorder(*recordDir, secrets, false), false)
+	case *replayDir != "":
+		useRecorder(env, brief.NewDirRecorder(*replayDir, secrets, true), true)
+	}
 	plan := loaded.Plan
 	if *only != "" {
 		plan.Only = strings.Split(*only, ",")

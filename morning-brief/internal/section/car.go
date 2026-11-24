@@ -3,6 +3,7 @@ package section
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/Barben360/hermes-image/morning-brief/internal/brief"
 	"github.com/Barben360/hermes-image/morning-brief/internal/source/ha"
@@ -28,6 +29,15 @@ func newCarConfig() *CarConfig { return &CarConfig{Enabled: true, WarnBelowPct: 
 
 func (c *CarConfig) IsEnabled() bool { return c.Enabled }
 
+// setHint is the multi-key form of `config set` for the required ids of a section.
+func setHint(section string, ids []struct{ key, id string }) string {
+	parts := make([]string, len(ids))
+	for i, r := range ids {
+		parts[i] = section + "." + r.key + "=<id>"
+	}
+	return strings.Join(parts, " ")
+}
+
 func (c *CarConfig) Validate() error {
 	required := []struct{ key, id string }{
 		{"battery", c.Battery}, {"range", c.Range}, {"plug", c.Plug},
@@ -35,7 +45,7 @@ func (c *CarConfig) Validate() error {
 	}
 	for _, r := range required {
 		if r.id == "" {
-			return fmt.Errorf("set car.%s (morning-brief config set car.%s <entity id>)", r.key, r.key)
+			return fmt.Errorf("set car.%s (morning-brief config set %s)", r.key, setHint("car", required))
 		}
 	}
 	seen := map[string]string{}

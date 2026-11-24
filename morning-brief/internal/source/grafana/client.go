@@ -74,7 +74,7 @@ func (c *Client) get(ctx context.Context, path string) ([]Alert, int, error) {
 		return nil, 0, fmt.Errorf("grafana %s: read failed", path)
 	}
 	var as []Alert
-	if err := json.Unmarshal(body, &as); err != nil {
+	if err := json.Unmarshal(body, &as); err != nil || as == nil { // `null` decodes to a nil slice: not an answer
 		return nil, 0, fmt.Errorf("grafana %s: invalid JSON", path)
 	}
 	return as, resp.StatusCode, nil

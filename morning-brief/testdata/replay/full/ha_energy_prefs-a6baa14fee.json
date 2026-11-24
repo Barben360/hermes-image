@@ -2,35 +2,34 @@
   "device_consumption": [],
   "energy_sources": [
     {
+      "entity_energy_price": null,
+      "number_energy_price": 0.1789,
+      "stat_cost": null,
+      "stat_energy_from": "sensor.gas_filtered",
+      "type": "gas"
+    },
+    {
       "cost_adjustment_day": 0,
-      "flow_from": [
-        {
-          "entity_energy_price": null,
-          "number_energy_price": null,
-          "stat_cost": "sensor.meter_base_cost",
-          "stat_energy_from": "sensor.meter_base"
-        },
-        {
-          "entity_energy_price": null,
-          "number_energy_price": null,
-          "stat_cost": "sensor.meter_offpeak_cost",
-          "stat_energy_from": "sensor.meter_offpeak"
-        }
-      ],
-      "flow_to": [],
+      "entity_energy_price": "sensor.price_base",
+      "entity_energy_price_export": null,
+      "number_energy_price": null,
+      "number_energy_price_export": null,
+      "stat_compensation": null,
+      "stat_cost": null,
+      "stat_energy_from": "sensor.meter_base",
+      "stat_energy_to": null,
       "type": "grid"
     },
     {
       "cost_adjustment_day": 0,
-      "flow_from": [
-        {
-          "entity_energy_price": null,
-          "number_energy_price": null,
-          "stat_cost": "sensor.elec_sub_cumul",
-          "stat_energy_from": "sensor.elec_sub_zero_energy"
-        }
-      ],
-      "flow_to": [],
+      "entity_energy_price": "sensor.price_offpeak",
+      "entity_energy_price_export": null,
+      "number_energy_price": null,
+      "number_energy_price_export": null,
+      "stat_compensation": null,
+      "stat_cost": null,
+      "stat_energy_from": "sensor.meter_offpeak",
+      "stat_energy_to": null,
       "type": "grid"
     },
     {
@@ -39,17 +38,22 @@
     },
     {
       "entity_energy_price": null,
-      "number_energy_price": 0.1789,
-      "stat_cost": null,
-      "stat_energy_from": "sensor.gas_filtered",
-      "type": "gas"
-    },
-    {
-      "entity_energy_price": null,
       "number_energy_price": null,
       "stat_cost": "sensor.gas_sub_cumul",
       "stat_energy_from": "sensor.gas_sub_zero_energy",
       "type": "gas"
+    },
+    {
+      "cost_adjustment_day": 0,
+      "entity_energy_price": null,
+      "entity_energy_price_export": null,
+      "number_energy_price": null,
+      "number_energy_price_export": null,
+      "stat_compensation": null,
+      "stat_cost": "sensor.elec_sub_cumul",
+      "stat_energy_from": "sensor.elec_sub_zero_energy",
+      "stat_energy_to": null,
+      "type": "grid"
     }
   ]
 }

@@ -164,3 +164,71 @@ func TestConfigSetShowUnset(t *testing.T) {
 		t.Errorf("after unset: %q", o)
 	}
 }
+
+// The syntax the skill documents works verbatim, on the real sections and on a fresh volume (no directory yet).
+func TestSkillConfigExamplesWork(t *testing.T) {
+	defer brief.UseSectionsForTest(realSections...)()
+	skill, err := os.ReadFile("../../../skills/morning-brief/SKILL.md")
+	if os.IsNotExist(err) {
+		t.Skip("SKILL.md is outside the Docker build context of morning-brief/; the checkout's go test runs this")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	flat := strings.Join(strings.Fields(string(skill)), " ")
+	cfg := filepath.Join(t.TempDir(), "fresh", "morning-brief", "config.yaml")
+	run := func(args ...string) (int, string) {
+		var out, errb bytes.Buffer
+		code := realMain(append([]string{"config"}, append(args, "--config", cfg)...), &out, &errb)
+		return code, errb.String()
+	}
+	// each example, as the shell would split it, and the text it must have in the skill
+	examples := []struct {
+		doc  string
+		args []string
+	}{
+		{"`morning-brief config set mail.enabled false`", []string{"set", "mail.enabled", "false"}},
+		{"`morning-brief config set expiries.warn_within_days 14`", []string{"set", "expiries.warn_within_days", "14"}},
+		{`morning-brief config set writer.notes "car first, I'm always cold"`, []string{"set", "writer.notes", "car first, I'm always cold"}},
+		{`morning-brief config set mail.drop_senders='[news@example.org, "@promo.example.com"]'`,
+			[]string{"set", `mail.drop_senders=[news@example.org, "@promo.example.com"]`}},
+		{"`morning-brief config set car.battery=sensor.a car.range=sensor.b car.plug=sensor.c car.charging=binary_sensor.d car.target=number.e car.tracker=device_tracker.f`",
+			[]string{"set", "car.battery=sensor.a", "car.range=sensor.b", "car.plug=sensor.c", "car.charging=binary_sensor.d", "car.target=number.e", "car.tracker=device_tracker.f"}},
+	}
+	for _, ex := range examples {
+		if !strings.Contains(flat, ex.doc) {
+			t.Errorf("SKILL.md no longer documents %s", ex.doc)
+		}
+		if code, e := run(ex.args...); code != 0 {
+			t.Errorf("%v: exit %d %s", ex.args, code, e)
+		}
+	}
+	var out, errb bytes.Buffer
+	realMain([]string{"config", "show", "--config", cfg}, &out, &errb)
+	for _, want := range []string{"enabled: false", "warn_within_days: 14", "car first", "news@example.org", "battery: sensor.a"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("config show lacks %q:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestMultiKeyCarSetWhereSingleKeyFails(t *testing.T) {
+	defer brief.UseSectionsForTest(realSections...)()
+	cfg := filepath.Join(t.TempDir(), "config.yaml")
+	var out, errb bytes.Buffer
+	if code := realMain([]string{"config", "set", "car.battery", "sensor.a", "--config", cfg}, &out, &errb); code == 0 || !strings.Contains(errb.String(), "car.range=<id>") {
+		t.Errorf("single key: %d %q (want a refusal showing the multi-key form)", code, errb.String())
+	}
+	if _, err := os.Stat(cfg); err == nil {
+		t.Error("a refused set wrote the file")
+	}
+	out.Reset()
+	errb.Reset()
+	if code := realMain([]string{"config", "set", "car.battery=sensor.a", "car.range=sensor.b", "--config", cfg}, &out, &errb); code == 0 {
+		t.Error("incomplete multi set accepted")
+	}
+	if code := realMain([]string{"config", "set", "car.battery=sensor.a", "car.range=sensor.b", "car.plug=sensor.c",
+		"car.charging=binary_sensor.d", "car.target=number.e", "car.tracker=device_tracker.f", "--config", cfg}, &out, &errb); code != 0 {
+		t.Errorf("full multi set: %d %s", code, errb.String())
+	}
+}

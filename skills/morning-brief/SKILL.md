@@ -79,7 +79,7 @@ All changes go through the program, as hermes, from a shell in the container. It
 - Change one key: `morning-brief config set <section>.<key> <value>`; the value is read as
   YAML, and a list replaces the old list (repeat the items you keep). Examples:
   `morning-brief config set mail.enabled false` ("no more mail info"),
-  `morning-brief config set robot.remind_after_days 4`,
+  `morning-brief config set expiries.warn_within_days 14`,
   `morning-brief config set writer.notes "car first, I'm always cold"`,
   `morning-brief config set mail.drop_senders='[news@example.org, "@promo.example.com"]'`.
 - Several keys checked together (a section valid only once all are set, e.g. the car's

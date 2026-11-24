@@ -77,7 +77,9 @@ func collectMailSection(ctx context.Context, env *brief.Env, c *MailConfig) brie
 			return fail(err)
 		}
 		if env.Rec != nil {
-			_ = env.Rec.Save("mail", msgs)
+			if err := env.Rec.Save("mail", msgs); err != nil {
+				return fail(fmt.Errorf("record: %w", err))
+			}
 		}
 	}
 	var items []brief.Item

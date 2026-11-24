@@ -263,7 +263,7 @@ func configCmd(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	usage := func() int {
-		fmt.Fprintln(stderr, "usage: morning-brief config show [--effective] | set <section>.<key> <value> | unset <section>.<key>")
+		fmt.Fprintln(stderr, "usage: morning-brief config show [--effective] | set <section>.<key> <value> | set <section>.<key>=<value>... | unset <section>.<key>")
 		return 2
 	}
 	if len(pos) == 0 {
@@ -294,8 +294,21 @@ func configCmd(args []string, stdout, stderr io.Writer) int {
 		}
 		stdout.Write(b)
 		return 0
-	case pos[0] == "set" && len(pos) == 3:
+	case pos[0] == "set" && len(pos) == 3 && !strings.Contains(pos[1], "="):
 		if err := config.Set(cm.config, sections, pos[1], pos[2]); err != nil {
+			return fail(err)
+		}
+		return 0
+	case pos[0] == "set" && len(pos) >= 2:
+		pairs := make([]config.Pair, 0, len(pos)-1)
+		for _, a := range pos[1:] {
+			k, v, ok := strings.Cut(a, "=")
+			if !ok {
+				return fail(fmt.Errorf("%q: want <section>.<key>=<value>", a))
+			}
+			pairs = append(pairs, config.Pair{Key: k, Value: v})
+		}
+		if err := config.SetMany(cm.config, sections, pairs); err != nil {
 			return fail(err)
 		}
 		return 0

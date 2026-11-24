@@ -70,6 +70,8 @@ ENV GH_CONFIG_DIR=/opt/data/home/.config/gh \
     GH_PROMPT_DISABLED=1
 
 COPY --from=morning-brief /out/morning-brief /usr/local/bin/morning-brief
+# Synthetic full run (no real data): ci/smoke.sh replays it through the image's binary.
+COPY --from=morning-brief /src/testdata/replay/full/ /usr/local/share/morning-brief/replay/full/
 
 COPY rootfs/ /
 

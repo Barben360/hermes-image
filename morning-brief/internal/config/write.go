@@ -67,49 +67,86 @@ func problem(r result, section string) string {
 	return r.Plan.ConfigErrors[section]
 }
 
-func tryApply(path string, raw map[string]any, old []byte, sections []brief.Section, section string) error {
+func tryApply(path string, raw map[string]any, old []byte, sections []brief.Section, touched ...string) error {
 	nb, err := yaml.Marshal(raw)
 	if err != nil {
 		return err
 	}
-	if p := problem(loadBytes(nb, path, sections), section); p != "" {
-		return errors.New(p)
+	r := loadBytes(nb, path, sections)
+	for _, section := range touched {
+		if p := problem(r, section); p != "" {
+			return errors.New(p)
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
 	}
 	return writeAtomic(path, old, nb)
 }
 
+// Pair is one dotted key and its value, read as YAML.
+type Pair struct{ Key, Value string }
+
 // Set changes one key of the owner's file after validating the result; the previous file is kept as path+".prev".
 func Set(path string, sections []brief.Section, dotted, value string) error {
-	section, key, err := splitDotted(dotted)
-	if err != nil {
-		return err
-	}
-	if err := checkTarget(section, sections); err != nil {
-		return err
-	}
-	var parsed any
-	candidates := []any{}
-	if yaml.Unmarshal([]byte(value), &parsed) == nil {
-		candidates = append(candidates, parsed)
-	}
-	candidates = append(candidates, value)
+	return SetMany(path, sections, []Pair{{dotted, value}})
+}
 
+// SetMany applies every pair together and validates once: all or nothing, the error names the bad key.
+func SetMany(path string, sections []brief.Section, pairs []Pair) error {
+	if len(pairs) == 0 {
+		return errors.New("nothing to set")
+	}
+	type target struct{ section, key string }
+	targets := make([]target, len(pairs))
+	var touched []string
+	seen := map[string]bool{}
+	for i, p := range pairs {
+		section, key, err := splitDotted(p.Key)
+		if err != nil {
+			return err
+		}
+		if err := checkTarget(section, sections); err != nil {
+			return fmt.Errorf("%s: %w", p.Key, err)
+		}
+		targets[i] = target{section, key}
+		if !seen[section] {
+			seen[section] = true
+			touched = append(touched, section)
+		}
+	}
+	// First every value read as YAML, then (for a value that is not valid YAML or
+	// is refused as typed) every value as a plain string.
+	asYAML := func(v string) any {
+		var parsed any
+		if yaml.Unmarshal([]byte(v), &parsed) == nil {
+			return parsed
+		}
+		return v
+	}
 	var firstErr error
-	for _, v := range candidates {
+	for attempt := 0; attempt < 2; attempt++ {
 		raw, old, err := readRaw(path)
 		if err != nil {
 			return err
 		}
-		sec, _ := raw[section].(map[string]any)
-		if sec == nil {
-			if raw[section] != nil {
-				return fmt.Errorf("%s in %s is not a mapping, fix it first", section, path)
+		for i, p := range pairs {
+			t := targets[i]
+			sec, _ := raw[t.section].(map[string]any)
+			if sec == nil {
+				if raw[t.section] != nil {
+					return fmt.Errorf("%s in %s is not a mapping, fix it first", t.section, path)
+				}
+				sec = map[string]any{}
 			}
-			sec = map[string]any{}
+			if attempt == 0 {
+				sec[t.key] = asYAML(p.Value)
+			} else {
+				sec[t.key] = p.Value
+			}
+			raw[t.section] = sec
 		}
-		sec[key] = v
-		raw[section] = sec
-		err = tryApply(path, raw, old, sections, section)
+		err = tryApply(path, raw, old, sections, touched...)
 		if err == nil {
 			return nil
 		}

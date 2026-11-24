@@ -30,11 +30,12 @@ func newPetFeederConfig() *PetFeederConfig {
 func (c *PetFeederConfig) IsEnabled() bool { return c.Enabled }
 
 func (c *PetFeederConfig) Validate() error {
-	for _, r := range []struct{ key, id string }{
+	required := []struct{ key, id string }{
 		{"food_level", c.FoodLevel}, {"fault", c.Fault}, {"feed_success", c.FeedSuccess},
-	} {
+	}
+	for _, r := range required {
 		if r.id == "" {
-			return fmt.Errorf("set pet_feeder.%s (morning-brief config set pet_feeder.%s <entity id>)", r.key, r.key)
+			return fmt.Errorf("set pet_feeder.%s (morning-brief config set %s)", r.key, setHint("pet_feeder", required))
 		}
 	}
 	if c.NoFeedAfterHours <= 0 {

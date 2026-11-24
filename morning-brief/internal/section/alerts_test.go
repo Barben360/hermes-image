@@ -169,7 +169,7 @@ func TestAlertsMalformedEntriesSkipped(t *testing.T) {
 }
 
 func TestAlertsGarbage200IsError(t *testing.T) {
-	for _, body := range []string{"<html>hi</html>", "{}"} {
+	for _, body := range []string{"<html>hi</html>", "{}", "null"} {
 		srv := amServer(t, body)
 		r := collectAlerts(context.Background(), testEnv(t, srv.URL, map[string]string{"grafana_token": "tok123"}), alertsCfg())
 		srv.Close()

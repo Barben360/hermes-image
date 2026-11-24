@@ -295,3 +295,53 @@ func TestDefaultWriterOrderIsSpecOrder(t *testing.T) {
 		t.Errorf("%v %+v", l.TopErrors, l.Writer)
 	}
 }
+
+func TestSetCreatesMissingDirectory(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "opt", "morning-brief", "config.yaml")
+	if err := Set(p, fakeSections(), "fakeA.hours", "3"); err != nil {
+		t.Fatal(err)
+	}
+	if cfgOf(t, Load(p, fakeSections()), "fakeA").Hours != 3 {
+		t.Error("not written")
+	}
+	if st, err := os.Stat(filepath.Dir(p)); err != nil || st.Mode().Perm() != 0o755 {
+		t.Errorf("dir %v %v", st, err)
+	}
+}
+
+func TestSetManyIsAllOrNothing(t *testing.T) {
+	p := writeFile(t, "fakeA:\n  hours: 6\n")
+	before, _ := os.ReadFile(p)
+	err := SetMany(p, fakeSections(), []Pair{{"fakeA.hours", "9"}, {"fakeA.hourz", "1"}})
+	if err == nil || !strings.Contains(err.Error(), "hourz") {
+		t.Fatalf("want an error naming hourz: %v", err)
+	}
+	err = SetMany(p, fakeSections(), []Pair{{"fakeA.hours", "9"}, {"nosuch.x", "1"}})
+	if err == nil || !strings.Contains(err.Error(), "nosuch.x") {
+		t.Fatalf("want an error naming nosuch.x: %v", err)
+	}
+	after, _ := os.ReadFile(p)
+	if string(before) != string(after) {
+		t.Errorf("file changed:\n%s", after)
+	}
+	if _, err := os.Stat(p + ".prev"); err == nil {
+		t.Error("a .prev was written by a refused set")
+	}
+	if err := SetMany(p, fakeSections(), []Pair{{"fakeA.hours", "9"}, {"fakeThirdParty.name", "z"}}); err != nil {
+		t.Fatal(err)
+	}
+	l := Load(p, fakeSections())
+	if cfgOf(t, l, "fakeA").Hours != 9 || cfgOf(t, l, "fakeThirdParty").Name != "z" {
+		t.Error("both sections not applied")
+	}
+}
+
+func TestSetListReplaces(t *testing.T) {
+	p := writeFile(t, "writer:\n  order: [fakeA, fakeThirdParty]\n")
+	if err := SetMany(p, fakeSections(), []Pair{{"writer.order", "[fakeThirdParty]"}}); err != nil {
+		t.Fatal(err)
+	}
+	if o := Load(p, fakeSections()).Writer.Order; len(o) != 1 || o[0] != "fakeThirdParty" {
+		t.Errorf("order %v", o)
+	}
+}

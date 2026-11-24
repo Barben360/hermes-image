@@ -3,6 +3,7 @@ package section
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -481,5 +482,20 @@ func TestMailRecordsAndReplays(t *testing.T) {
 	r.env.Rec = brief.NewDirRecorder(t.TempDir(), r.env.Secrets, true)
 	if res := collectMail(t, r.env, nil); res.Status != brief.StatusError {
 		t.Errorf("empty recording: %s", res.Status)
+	}
+}
+
+type failSaveRec struct{}
+
+func (failSaveRec) Save(string, any) error { return errors.New("disk full") }
+func (failSaveRec) Load(string, any) error { return nil }
+
+// A recording that cannot be written fails the section, like the HTTP recorder does.
+func TestMailRecordSaveFailureIsError(t *testing.T) {
+	r := newMailRig(t, []mailMsg{{from: "Alice <alice@example.org>", subject: "hello", received: hoursAgo(2)}})
+	r.env.Rec = failSaveRec{}
+	res := collectMail(t, r.env, nil)
+	if res.Status != brief.StatusError || !strings.Contains(res.Err, "disk full") {
+		t.Errorf("%s %q", res.Status, res.Err)
 	}
 }

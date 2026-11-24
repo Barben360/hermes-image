@@ -123,7 +123,9 @@ func TestGenerateFullReplay(t *testing.T) {
 	}
 	tmp := t.TempDir()
 	toml := strings.ReplaceAll(mustRead(t, filepath.Join(full, "himalaya.toml")), "imap.example.test:143", f.imapAddr)
-	os.WriteFile(filepath.Join(tmp, "himalaya.toml"), []byte(toml), 0o600)
+	if err := os.WriteFile(filepath.Join(tmp, "himalaya.toml"), []byte(toml), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	live := strings.NewReplacer(
 		"http://ha.example.test:8123", f.ha.URL,
 		"http://grafana.example.test:3000", f.other.URL,
@@ -136,19 +138,28 @@ func TestGenerateFullReplay(t *testing.T) {
 		"http://deepseek.example.test", f.other.URL,
 	).Replace(string(cfg))
 	liveCfg := filepath.Join(tmp, "config.yaml")
-	os.WriteFile(liveCfg, []byte(live), 0o600)
+	if err := os.WriteFile(liveCfg, []byte(live), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	rec := filepath.Join(tmp, "rec")
 
 	t.Chdir(full)
 	liveOut := runMain(t, "run", "--record", rec, "--config", liveCfg, "--secrets-dir", "secrets", "--now", fullNow)
 	old, _ := filepath.Glob("*.json")
 	for _, p := range old {
-		os.Remove(p)
+		if err := os.Remove(p); err != nil {
+			t.Fatal(err)
+		}
 	}
 	files, _ := filepath.Glob(filepath.Join(rec, "*.json"))
 	for _, p := range files {
-		b, _ := os.ReadFile(p)
-		os.WriteFile(filepath.Base(p), b, 0o644)
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Base(p), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	replayOut := runMain(t, "run", "--replay", ".", "--config", "config.yaml", "--secrets-dir", "secrets", "--now", fullNow)
 	if replayOut != liveOut {
@@ -243,7 +254,9 @@ func startFullFakes(t *testing.T, secretsDir string) *fullFakes {
 	f.pcb = httptest.NewTLSServer(http.HandlerFunc(servePCB))
 	t.Cleanup(f.pcb.Close)
 	f.caFile = filepath.Join(t.TempDir(), "pcb.pem")
-	os.WriteFile(f.caFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: f.pcb.Certificate().Raw}), 0o600)
+	if err := os.WriteFile(f.caFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: f.pcb.Certificate().Raw}), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	f.imapAddr = startIMAP(t, strings.TrimSpace(mustRead(t, filepath.Join(secretsDir, "mail_password"))))
 	return f
 }

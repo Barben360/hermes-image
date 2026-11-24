@@ -109,29 +109,38 @@ MB_SRC=/opt/hermes/skills/homelab/morning-brief
 MB_DST=/opt/data/scripts/morning-brief
 MB_SECRETS="ha_token grafana_token pcb_token github_issues_token github_token_expires deepseek_key bugsink_token"
 check "morning-brief installed" x morning-brief sections
-# TODO(B13b): 16
-check "morning-brief lists its sections" \
-    x sh -c 'test "$(morning-brief sections | grep -c "^ *- name: ")" -ge 1'
-# Entity ids are site data (empty by default, check names one to set per
-# section): write dummies as check asks, until it passes (the file directly:
-# `config set` refuses a change that leaves its section invalid, so one id at
-# a time never passes). It must never miss a credential.
+check "morning-brief lists exactly its 16 sections" \
+    x sh -c 'test "$(morning-brief sections | grep -c "^ *- name: ")" = 16'
+# Entity ids are site data (empty by default, check names the ones to set per
+# section): write dummies the way the skill documents, through `config set`
+# with several key=value arguments (a section is valid only once all its ids
+# are set), into a directory that does not exist yet (a fresh volume), until
+# check passes. It must never miss a credential.
 mb_check() { # mb_check <file>: the config that passed is saved to <file>
     docker exec -i -u hermes "$NAME" sh -s "$MB_SECRETS" > "$1" <<'SH'
 set -eu
 d=$(mktemp -d)
 for f in $1; do echo dummy-credential > "$d/$f"; done
 echo 2099-01-01 > "$d/github_token_expires"
+echo dummy-credential > "$d/mail_password"
+cfg=$d/fresh/morning-brief/config.yaml
 i=0
-while ! out=$(morning-brief check --config "$d/config.yaml" --secrets-dir "$d"); do
+while ! out=$(morning-brief check --config "$cfg" --secrets-dir "$d"); do
     echo "$out" | grep -q 'not readable' && { echo "$out"; exit 1; }
-    keys=$(echo "$out" | sed -n 's/.*(morning-brief config set \([a-z_]*\.[a-z_]*\) <entity id>).*/\1/p')
-    [ -n "$keys" ] && [ "$i" -lt 50 ] || { echo "$out"; exit 1; }
-    echo "$keys" >> "$d/keys"
-    sort -u "$d/keys" | awk -F. '$1 != s { s = $1; print s ":" } { print "  " $2 ": smoke." $1 "_" $2 }' > "$d/config.yaml"
+    [ "$i" -lt 50 ] || { echo "$out"; exit 1; }
+    echo "$out" | grep ': config: set ' > "$d/lines" || { echo "$out"; exit 1; }
+    while IFS= read -r line; do
+        keys=$(echo "$line" | grep -o '[a-z_]*\.[a-z_]*=<id>' | sed 's/=<id>$//' || true)
+        keys="$keys $(echo "$line" | sed -n 's/.*(morning-brief config set \([a-z_]*\.[a-z_]*\) <entity id>).*/\1/p')"
+        set --
+        for k in $keys; do set -- "$@" "$k=smoke.$(echo "$k" | tr . _)"; done
+        case $line in sensors:*) set -- "$@" 'sensors.include=[sensor.smoke_*_temperature]' ;; esac
+        [ "$#" -gt 0 ] || { echo "$out"; exit 1; }
+        morning-brief config set --config "$cfg" "$@" >&2 || exit 1
+    done < "$d/lines"
     i=$((i + 1))
 done
-if [ -f "$d/config.yaml" ]; then cat "$d/config.yaml"; fi
+if [ -f "$cfg" ]; then cat "$cfg"; fi
 SH
 }
 mkdir -p "$WORK/mb-config"
@@ -179,6 +188,36 @@ done
 docker cp "$WORK/mb-planted.out" "$NAME:/tmp/mb-planted.out" >/dev/null 2>&1 || true
 check "Hermes's cron scanner blocks a planted phrase (the oracle bites)" \
     scan /tmp/mb-planted.out --expect-block
+
+# The full synthetic run, replayed by the image's own binary: 16 sections and
+# a summary line, and Hermes's scanner lets it through (one mail subject in it
+# is an injection phrase the sanitizer must have neutralised).
+REPLAY=/usr/local/share/morning-brief/replay/full
+mb_replay() { # mb_replay <output file>
+    docker exec -u hermes -w "$REPLAY" "$NAME" morning-brief run --replay . --config config.yaml \
+        --secrets-dir secrets --now 2026-11-25T07:15:00+01:00 > "$1" &&
+        test "$(grep -c '^## [a-z_]* \[' "$1")" = 16 && grep -q '^## summary: ' "$1"
+}
+check "morning-brief replays the full fixture: exit 0, 16 section headers, a summary" mb_replay "$WORK/replay.out"
+docker cp "$WORK/replay.out" "$NAME:/tmp/replay.out" >/dev/null 2>&1 || true
+check "Hermes's cron scanner passes job prompt + skill + the full replay's output" scan /tmp/replay.out
+
+# The watcher, through the image's watch.sh and a synthetic jobs.json: one
+# line for a missing job, nothing for a job that delivered this morning.
+mkdir -p "$WORK/mb-jobs"
+chmod 0755 "$WORK/mb-jobs"
+printf '{"jobs":[{"name":"other","enabled":true,"state":"scheduled"}]}\n' > "$WORK/mb-jobs/missing.json"
+TODAY=$(TZ=Europe/Paris date +%Y-%m-%dT07:20:00%:z)
+printf '{"jobs":[{"name":"morning-brief","enabled":true,"state":"scheduled","last_run_at":"%s","last_status":"ok"}]}\n' "$TODAY" > "$WORK/mb-jobs/clean.json"
+chmod 0644 "$WORK/mb-jobs/"*.json
+mb_watch() { # mb_watch <jobs file>: watch.sh's stdout
+    docker run --rm --network none -u hermes -v "$1:/opt/data/cron/jobs.json:ro" \
+        --entrypoint sh "$IMAGE" "$MB_SRC/watch.sh"
+}
+mb_watch_line() { mb_watch "$WORK/mb-jobs/missing.json" | grep -q '^⚠️ Le brief du matin n.a pas été livré : '; }
+mb_watch_silent() { test -z "$(mb_watch "$WORK/mb-jobs/clean.json")"; }
+check "watch.sh prints the warning line when the job is missing" mb_watch_line
+check "watch.sh prints nothing when the brief was delivered" mb_watch_silent
 
 # The owner's overrides belong to the volume: a restart leaves them as they are.
 x sh -c 'mkdir -p /opt/data/morning-brief && printf "car:\n  warn_below_pct: 25\n# kept\n" > /opt/data/morning-brief/config.yaml'

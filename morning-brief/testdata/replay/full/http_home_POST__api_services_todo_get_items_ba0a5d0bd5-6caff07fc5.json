@@ -1,0 +1,9 @@
+{
+  "body": "{\"changed_states\":[],\"service_response\":{\"todo.shopping\":{\"items\":[{\"status\":\"needs_action\",\"summary\":\"Lait\",\"uid\":\"u1\"},{\"status\":\"needs_action\",\"summary\":\"Pain\",\"uid\":\"u2\"}]}}}\n",
+  "header": {
+    "Content-Type": "application/json"
+  },
+  "method": "POST",
+  "path": "/api/services/todo/get_items",
+  "status": 200
+}

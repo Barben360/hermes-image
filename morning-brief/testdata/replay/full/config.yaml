@@ -1,0 +1,50 @@
+# Synthetic config of the full replay fixture (every id and host invented; coordinates live in the
+# recorded zones: 45.0 / 5.0 only). Paths are relative to this directory: run from it, as
+#   morning-brief run --replay . --config config.yaml --secrets-dir secrets --now 2026-11-25T07:15:00+01:00
+# Regenerate the recording with: go test ./cmd/morning-brief -run TestGenerateFullReplay -generate-full-replay
+writer:
+  notes: "j'ai toujours froid"
+sources:
+  ha_url: http://ha.example.test:8123
+  grafana_url: http://grafana.example.test:3000
+  pcb_url: https://pcb.example.test:1080/mcp
+  pcb_ca: ""
+  imap_config: himalaya.toml
+  bugsink_url: http://bugsink.example.test:8000
+  bugsink_host: bugsink.example.test
+  vault_dir: vault
+weather:
+  api_url: http://openmeteo.example.test/v1/forecast
+  places: {home: zone.home, work: zone.work}
+car:
+  battery: sensor.car_battery
+  range: sensor.car_range
+  max_range: sensor.car_max_range
+  plug: sensor.car_plug
+  charging: binary_sensor.car_charging
+  charge_state: sensor.car_charge_state
+  target: number.car_target
+  tracker: device_tracker.car
+  hvac_threshold: number.car_hvac_threshold
+robot:
+  last_clean_end: sensor.robot_last_clean_end
+  parts: [sensor.robot_main_brush_left, sensor.robot_filter_left]
+  dock_error: sensor.robot_dock_error
+  water_problems: [binary_sensor.robot_clean_water_tank]
+  vacuum_error: sensor.robot_vacuum_error
+  person: person.alex
+sensors:
+  include: [sensor.room_*_temperature]
+home:
+  shopping_list: todo.shopping
+github:
+  owner: example-owner
+  api_url: http://github.example.test
+deepseek:
+  base_url: http://deepseek.example.test
+pet_feeder:
+  food_level: sensor.feeder_food_level
+  fault: sensor.feeder_fault
+  feed_success: event.feeder_feed_success
+presence:
+  person: person.alex

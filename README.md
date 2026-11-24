@@ -18,6 +18,15 @@ into its own skills at every start (it keeps the ones it customized).
 `tech-radar` also ships a cron script, which `rootfs/etc/cont-init.d/60-homelab-tech-radar`
 installs into `/opt/data/scripts/tech-radar/` at every start (Hermes runs cron scripts only from there).
 
+`morning-brief/` is the morning brief's data collector (Go, vendored): a build stage runs
+gofmt, `go vet` and its tests, then the binary goes to `/usr/local/bin/morning-brief`. Skill
+`morning-brief` holds what Jerry needs to write, change and debug the brief, its job prompt
+(`job-prompt.txt`) and its cron scripts `run.sh` and `watch.sh`, which
+`rootfs/etc/cont-init.d/70-homelab-morning-brief` installs into `/opt/data/scripts/morning-brief/`
+at every start; the owner's config (`/opt/data/morning-brief/config.yaml`) is never touched
+by the image. `ci/smoke.sh` runs Hermes's own cron injection scanner (`ci/cron_scan.py`) over
+the job prompt + skill + an offline run's output: a hit there would block the brief.
+
 Every PR and push to `main` builds the image and runs `ci/smoke.sh`; `main` pushes
 `ghcr.io/barben360/hermes-agent:latest` and `:sha-<12>`. morpheus polls `:latest`
 (policy `poll`) and deploys a new digest within minutes; a failed health check keeps

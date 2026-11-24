@@ -9,6 +9,8 @@ morpheus: treat every change as a production deploy of yourself.
   and a matching check in `ci/smoke.sh` (the check must fail without your change).
 - Bump `HIMALAYA_*` / `MCP_GRAFANA_*` (version + sha256 of the release asset).
 - Edit `README.md`, this file's examples, and `skills/` (your own skills).
+- Add or fix a morning-brief section (`morning-brief/`: Go file + test + defaults + a line in
+  `skills/morning-brief/SKILL.md`); a new section ships with `enabled: false`.
 - Merge your own PR once the `image` check is green (skill `self-merge-image`).
 
 ## You may not
@@ -17,6 +19,10 @@ morpheus: treat every change as a production deploy of yourself.
   or the repository settings and rulesets.
 - Remove or weaken a check in `ci/smoke.sh`, or `rootfs/etc/cont-init.d/50-homelab-credentials`'s
   rule that a missing token removes `hosts.yml`.
+- Weaken morning-brief's guard rails: the sanitizer of third-party text, the secret scrubber,
+  their tests, or the scanner check in `ci/smoke.sh` (`ci/cron_scan.py`); ship a new section
+  enabled by default; commit real data in its fixtures (coordinates, addresses, mail, entity
+  values, room ids: they are synthetic; recordings of real runs stay in the volume).
 - Change morpheus itself here: the server configuration lives in Barben360/my-homelab,
   where you only open issues and PRs from `hermes/*` branches; never push to its `main`,
   never merge there (skill `homelab-pr`).

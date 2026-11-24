@@ -1,0 +1,291 @@
+[
+  {
+    "attributes": {
+      "friendly_name": "Maison",
+      "latitude": 45,
+      "longitude": 5,
+      "radius": 100
+    },
+    "entity_id": "zone.home",
+    "last_changed": "2026-11-24T17:30:00+00:00",
+    "last_reported": "2026-11-24T17:30:00+00:00",
+    "last_updated": "2026-11-24T17:30:00+00:00",
+    "state": "0"
+  },
+  {
+    "attributes": {
+      "friendly_name": "Travail",
+      "latitude": 45,
+      "longitude": 5,
+      "radius": 100
+    },
+    "entity_id": "zone.work",
+    "last_changed": "2026-11-24T17:30:00+00:00",
+    "last_reported": "2026-11-24T17:30:00+00:00",
+    "last_updated": "2026-11-24T17:30:00+00:00",
+    "state": "0"
+  },
+  {
+    "attributes": {
+      "friendly_name": "Sun"
+    },
+    "entity_id": "sun.sun",
+    "last_changed": "2026-11-24T17:30:00+00:00",
+    "last_reported": "2026-11-25T06:05:00+00:00",
+    "last_updated": "2026-11-25T06:05:00+00:00",
+    "state": "below_horizon"
+  },
+  {
+    "attributes": {
+      "friendly_name": "Alex",
+      "latitude": 45,
+      "longitude": 5
+    },
+    "entity_id": "person.alex",
+    "last_changed": "2026-11-24T17:30:00+00:00",
+    "last_reported": "2026-11-24T17:30:00+00:00",
+    "last_updated": "2026-11-24T17:30:00+00:00",
+    "state": "home"
+  },
+  {
+    "attributes": {
+      "friendly_name": "Car location"
+    },
+    "entity_id": "device_tracker.car",
+    "last_changed": "2026-11-24T17:49:00+00:00",
+    "last_reported": "2026-11-24T17:49:00+00:00",
+    "last_updated": "2026-11-24T17:49:00+00:00",
+    "state": "home"
+  },
+  {
+    "attributes": {
+      "device_class": "battery",
+      "unit_of_measurement": "%"
+    },
+    "entity_id": "sensor.car_battery",
+    "last_changed": "2026-11-24T17:49:00+00:00",
+    "last_reported": "2026-11-24T17:49:00+00:00",
+    "last_updated": "2026-11-24T17:49:00+00:00",
+    "state": "18"
+  },
+  {
+    "attributes": {
+      "unit_of_measurement": "km"
+    },
+    "entity_id": "sensor.car_range",
+    "last_changed": "2026-11-24T17:49:00+00:00",
+    "last_reported": "2026-11-24T17:49:00+00:00",
+    "last_updated": "2026-11-24T17:49:00+00:00",
+    "state": "62"
+  },
+  {
+    "attributes": {
+      "unit_of_measurement": "km"
+    },
+    "entity_id": "sensor.car_max_range",
+    "last_changed": "2026-11-24T17:49:00+00:00",
+    "last_reported": "2026-11-24T17:49:00+00:00",
+    "last_updated": "2026-11-24T17:49:00+00:00",
+    "state": "348"
+  },
+  {
+    "attributes": {
+      "device_class": "enum"
+    },
+    "entity_id": "sensor.car_plug",
+    "last_changed": "2026-11-24T17:49:00+00:00",
+    "last_reported": "2026-11-24T17:49:00+00:00",
+    "last_updated": "2026-11-24T17:49:00+00:00",
+    "state": "unplugged"
+  },
+  {
+    "attributes": {},
+    "entity_id": "binary_sensor.car_charging",
+    "last_changed": "2026-11-24T17:49:00+00:00",
+    "last_reported": "2026-11-24T17:49:00+00:00",
+    "last_updated": "2026-11-24T17:49:00+00:00",
+    "state": "off"
+  },
+  {
+    "attributes": {},
+    "entity_id": "sensor.car_charge_state",
+    "last_changed": "2026-11-24T17:49:00+00:00",
+    "last_reported": "2026-11-24T17:49:00+00:00",
+    "last_updated": "2026-11-24T17:49:00+00:00",
+    "state": "not_in_charge"
+  },
+  {
+    "attributes": {
+      "unit_of_measurement": "%"
+    },
+    "entity_id": "number.car_target",
+    "last_changed": "2026-11-24T17:49:00+00:00",
+    "last_reported": "2026-11-24T17:49:00+00:00",
+    "last_updated": "2026-11-24T17:49:00+00:00",
+    "state": "80"
+  },
+  {
+    "attributes": {
+      "unit_of_measurement": "%"
+    },
+    "entity_id": "number.car_hvac_threshold",
+    "last_changed": "2026-11-24T17:49:00+00:00",
+    "last_reported": "2026-11-24T17:49:00+00:00",
+    "last_updated": "2026-11-24T17:49:00+00:00",
+    "state": "20"
+  },
+  {
+    "attributes": {
+      "friendly_name": "Robot last clean end"
+    },
+    "entity_id": "sensor.robot_last_clean_end",
+    "last_changed": "2026-11-24T17:30:00+00:00",
+    "last_reported": "2026-11-24T17:30:00+00:00",
+    "last_updated": "2026-11-24T17:30:00+00:00",
+    "state": "2026-11-21T12:41:00+00:00"
+  },
+  {
+    "attributes": {
+      "friendly_name": "Brosse principale"
+    },
+    "entity_id": "sensor.robot_main_brush_left",
+    "last_changed": "2026-11-24T17:30:00+00:00",
+    "last_reported": "2026-11-24T17:30:00+00:00",
+    "last_updated": "2026-11-24T17:30:00+00:00",
+    "state": "118.5"
+  },
+  {
+    "attributes": {
+      "friendly_name": "Filtre"
+    },
+    "entity_id": "sensor.robot_filter_left",
+    "last_changed": "2026-11-24T17:30:00+00:00",
+    "last_reported": "2026-11-24T17:30:00+00:00",
+    "last_updated": "2026-11-24T17:30:00+00:00",
+    "state": "0"
+  },
+  {
+    "attributes": {
+      "friendly_name": "Dock"
+    },
+    "entity_id": "sensor.robot_dock_error",
+    "last_changed": "2026-11-24T17:30:00+00:00",
+    "last_reported": "2026-11-24T17:30:00+00:00",
+    "last_updated": "2026-11-24T17:30:00+00:00",
+    "state": "ok"
+  },
+  {
+    "attributes": {
+      "friendly_name": "Robot error"
+    },
+    "entity_id": "sensor.robot_vacuum_error",
+    "last_changed": "2026-11-24T17:30:00+00:00",
+    "last_reported": "2026-11-24T17:30:00+00:00",
+    "last_updated": "2026-11-24T17:30:00+00:00",
+    "state": "none"
+  },
+  {
+    "attributes": {
+      "friendly_name": "Réservoir eau propre"
+    },
+    "entity_id": "binary_sensor.robot_clean_water_tank",
+    "last_changed": "2026-11-24T17:30:00+00:00",
+    "last_reported": "2026-11-24T17:30:00+00:00",
+    "last_updated": "2026-11-24T17:30:00+00:00",
+    "state": "off"
+  },
+  {
+    "attributes": {
+      "friendly_name": "Salon température"
+    },
+    "entity_id": "sensor.room_living_temperature",
+    "last_changed": "2026-11-25T06:05:00+00:00",
+    "last_reported": "2026-11-25T06:05:00+00:00",
+    "last_updated": "2026-11-25T06:05:00+00:00",
+    "state": "19.5"
+  },
+  {
+    "attributes": {
+      "friendly_name": "Chambre température"
+    },
+    "entity_id": "sensor.room_bedroom_temperature",
+    "last_changed": "2026-11-23T21:10:00+00:00",
+    "last_reported": "2026-11-23T21:10:00+00:00",
+    "last_updated": "2026-11-23T21:10:00+00:00",
+    "state": "17.9"
+  },
+  {
+    "attributes": {
+      "friendly_name": "Bureau température"
+    },
+    "entity_id": "sensor.room_office_temperature",
+    "last_changed": "2026-11-25T06:05:00+00:00",
+    "last_reported": "2026-11-25T06:05:00+00:00",
+    "last_updated": "2026-11-25T06:05:00+00:00",
+    "state": "unavailable"
+  },
+  {
+    "attributes": {
+      "friendly_name": "Niveau croquettes"
+    },
+    "entity_id": "sensor.feeder_food_level",
+    "last_changed": "2026-11-24T17:30:00+00:00",
+    "last_reported": "2026-11-24T17:30:00+00:00",
+    "last_updated": "2026-11-24T17:30:00+00:00",
+    "state": "Low"
+  },
+  {
+    "attributes": {
+      "friendly_name": "Défaut distributeur"
+    },
+    "entity_id": "sensor.feeder_fault",
+    "last_changed": "2026-11-24T17:30:00+00:00",
+    "last_reported": "2026-11-24T17:30:00+00:00",
+    "last_updated": "2026-11-24T17:30:00+00:00",
+    "state": "No Faults"
+  },
+  {
+    "attributes": {
+      "friendly_name": "Repas distribué"
+    },
+    "entity_id": "event.feeder_feed_success",
+    "last_changed": "2026-11-24T17:30:00+00:00",
+    "last_reported": "2026-11-24T17:30:00+00:00",
+    "last_updated": "2026-11-24T17:30:00+00:00",
+    "state": "2026-11-24T18:00:00+00:00"
+  },
+  {
+    "attributes": {
+      "friendly_name": "Home Assistant Core Update",
+      "installed_version": "2026.11.2",
+      "latest_version": "2026.11.3"
+    },
+    "entity_id": "update.home_assistant_core_update",
+    "last_changed": "2026-11-24T17:30:00+00:00",
+    "last_reported": "2026-11-24T17:30:00+00:00",
+    "last_updated": "2026-11-24T17:30:00+00:00",
+    "state": "on"
+  },
+  {
+    "attributes": {
+      "friendly_name": "Zigbee2MQTT Update",
+      "installed_version": "2.14.3",
+      "latest_version": "2.14.3"
+    },
+    "entity_id": "update.zigbee2mqtt_update",
+    "last_changed": "2026-11-24T17:30:00+00:00",
+    "last_reported": "2026-11-24T17:30:00+00:00",
+    "last_updated": "2026-11-24T17:30:00+00:00",
+    "state": "off"
+  },
+  {
+    "attributes": {
+      "friendly_name": "Courses"
+    },
+    "entity_id": "todo.shopping",
+    "last_changed": "2026-11-24T17:30:00+00:00",
+    "last_reported": "2026-11-24T17:30:00+00:00",
+    "last_updated": "2026-11-24T17:30:00+00:00",
+    "state": "2"
+  }
+]

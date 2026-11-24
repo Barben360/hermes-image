@@ -1,0 +1,9 @@
+{
+  "body": "{\"incomplete_results\":false,\"items\":[{\"created_at\":\"2026-11-24T23:00:00Z\",\"html_url\":\"https://github.com/example-owner/example-infra/pull/19\",\"labels\":[{\"name\":\"hermes\"}],\"number\":19,\"repository_url\":\"https://api.github.com/repos/example-owner/example-infra\",\"title\":\"🤖 Hermes: tidy the example docs\",\"user\":{\"login\":\"example-bot\"}}],\"total_count\":0}\n",
+  "header": {
+    "Content-Type": "application/json"
+  },
+  "method": "GET",
+  "path": "/search/issues",
+  "status": 200
+}

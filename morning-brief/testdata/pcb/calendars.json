@@ -1,0 +1,6 @@
+{"calendars":[
+ {"id":"cal-main","account":"owner@example.test","type":"normal","read_only":true,"default":true,"untrusted":{"name":"Personal"}},
+ {"id":"cal-family","account":"owner@example.test","type":"normal","read_only":true,"default":false,"untrusted":{"name":"Family"}},
+ {"id":"cal-holidays","account":"owner@example.test","type":"holidays","read_only":true,"default":false,"untrusted":{"name":"Public holidays"}},
+ {"id":"cal-sports","account":"owner@example.test","type":"subscribed","read_only":true,"default":false,"untrusted":{"name":"Sports fixtures"}}
+]}

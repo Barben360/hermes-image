@@ -1,0 +1,9 @@
+{
+  "body": "{\"balance_infos\":[{\"currency\":\"USD\",\"granted_balance\":\"0.00\",\"topped_up_balance\":\"3.42\",\"total_balance\":\"3.42\"}],\"is_available\":true}\n",
+  "header": {
+    "Content-Type": "application/json"
+  },
+  "method": "GET",
+  "path": "/user/balance",
+  "status": 200
+}

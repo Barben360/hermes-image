@@ -1,0 +1,9 @@
+{
+  "body": "{\"next\":null,\"results\":[{\"id\":1,\"name\":\"example-app\"}]}\n",
+  "header": {
+    "Content-Type": "application/json"
+  },
+  "method": "GET",
+  "path": "/api/canonical/0/projects/",
+  "status": 200
+}

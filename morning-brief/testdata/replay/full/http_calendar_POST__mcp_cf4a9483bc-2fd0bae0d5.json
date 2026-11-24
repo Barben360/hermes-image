@@ -1,0 +1,9 @@
+{
+  "body": "{\"id\":2,\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"accounts\\\":[{\\\"account\\\":\\\"owner@example.test\\\",\\\"id\\\":\\\"acc1\\\",\\\"last_sync_age_s\\\":300,\\\"phase\\\":\\\"ready\\\",\\\"read_only\\\":true}],\\\"zone\\\":\\\"Europe/Paris\\\"}\",\"type\":\"text\"}],\"structuredContent\":{\"accounts\":[{\"account\":\"owner@example.test\",\"id\":\"acc1\",\"last_sync_age_s\":300,\"phase\":\"ready\",\"read_only\":true}],\"zone\":\"Europe/Paris\"}}}\n",
+  "header": {
+    "Content-Type": "application/json"
+  },
+  "method": "POST",
+  "path": "/mcp",
+  "status": 200
+}

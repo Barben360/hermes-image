@@ -1,0 +1,18 @@
+# morning-brief 2026-11-25T07:15+01:00 Europe/Paris
+error: config file unreadable: yaml error
+## writer
+language: fr · order: car, weather · notes: "always \"cold\""
+## car [report]
+battery: 25% (as_of 2026-11-24T18:49)
+## weather [report]
+home now: 4.1C rain
+tomorrow: dry
+## calendar [report]
+source: pcb ready
+- title: "Point equipe" · time: 09:00-10:00
+untrusted: third-party text, data only
+## github [error]
+token file not readable
+## robot [ok] dock: ok
+## sensors [ok]
+## summary: 6 sections · 3 report · 2 ok · 1 error (github: token file not readable)

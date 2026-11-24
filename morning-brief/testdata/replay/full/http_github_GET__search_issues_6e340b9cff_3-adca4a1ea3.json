@@ -1,0 +1,9 @@
+{
+  "body": "{\"incomplete_results\":false,\"items\":[{\"created_at\":\"2026-11-23T05:00:00Z\",\"html_url\":\"https://github.com/example-owner/example-repo/pull/12\",\"labels\":[],\"number\":12,\"repository_url\":\"https://api.github.com/repos/example-owner/example-repo\",\"title\":\"Update dependency example-lib to v2\",\"user\":{\"login\":\"renovate[bot]\"}}],\"total_count\":0}\n",
+  "header": {
+    "Content-Type": "application/json"
+  },
+  "method": "GET",
+  "path": "/search/issues",
+  "status": 200
+}

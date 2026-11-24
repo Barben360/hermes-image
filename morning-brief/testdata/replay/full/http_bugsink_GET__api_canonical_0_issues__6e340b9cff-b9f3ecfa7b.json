@@ -1,0 +1,9 @@
+{
+  "body": "{\"next\":null,\"results\":[{\"calculated_type\":\"TypeError\",\"calculated_value\":\"cannot read properties of undefined (reading 'items')\",\"digested_event_count\":3,\"first_seen\":\"2026-11-24T21:03:00Z\",\"id\":\"0b6f2c1e-1111-4222-8333-944455556666\",\"last_seen\":\"2026-11-25T05:40:00Z\",\"title\":\"\"},{\"calculated_type\":\"Error\",\"calculated_value\":\"old crash\",\"digested_event_count\":40,\"first_seen\":\"2026-11-20T10:00:00Z\",\"id\":\"0b6f2c1e-7777-4888-9999-aaaabbbbcccc\",\"last_seen\":\"2026-11-24T23:00:00Z\"}]}\n",
+  "header": {
+    "Content-Type": "application/json"
+  },
+  "method": "GET",
+  "path": "/api/canonical/0/issues/",
+  "status": 200
+}

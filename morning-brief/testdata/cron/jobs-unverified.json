@@ -1,0 +1,45 @@
+{
+  "jobs": [
+    {
+      "id": "aaaaaaaaaaaa",
+      "name": "tech-radar",
+      "prompt": "",
+      "script": "tech-radar/run.sh",
+      "no_agent": true,
+      "schedule": {"kind": "cron", "expr": "0 7 * * *", "display": "0 7 * * *"},
+      "enabled": true,
+      "state": "scheduled",
+      "last_run_at": "2026-11-24T07:00:03.120000+01:00",
+      "last_status": "ok",
+      "last_error": null,
+      "last_delivery_error": null,
+      "failure_streak": 0,
+      "deliver": "origin",
+      "origin": {"platform": "matrix", "chat_id": "!room-a:example.org"},
+      "enabled_toolsets": null,
+      "timezone": "Europe/Paris"
+    },
+    {
+      "id": "bbbbbbbbbbbb",
+      "name": "morning-brief",
+      "prompt": "Run the morning brief.",
+      "script": null,
+      "no_agent": false,
+      "schedule": {"kind": "cron", "expr": "15 7 * * *", "display": "15 7 * * *"},
+      "enabled": true,
+      "state": "scheduled",
+      "last_run_at": "2026-11-24T07:15:41.711595+01:00",
+      "last_status": "ok",
+      "last_error": null,
+      "last_delivery_error": null,
+      "last_delivery_unverified": true,
+      "failure_streak": 0,
+      "deliver": "origin",
+      "origin": {"platform": "matrix", "chat_id": "!room-a:example.org"},
+      "enabled_toolsets": [],
+      "timezone": "Europe/Paris",
+      "last_dispatch": {"scheduled_at": "2026-11-24T07:15:00+01:00", "dispatched_at": "2026-11-24T07:15:00.4+01:00", "lateness_seconds": 0.4, "kind": "cron"}
+    }
+  ],
+  "updated_at": "2026-11-24T07:16:00.000000+01:00"
+}

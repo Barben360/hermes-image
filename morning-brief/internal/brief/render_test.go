@@ -155,3 +155,40 @@ func TestRenderJSONShape(t *testing.T) {
 		t.Errorf("%+v", out)
 	}
 }
+
+func renderOf(t *testing.T, facts ...Fact) string {
+	t.Helper()
+	var buf bytes.Buffer
+	d := Doc{Now: time.Date(2026, 11, 25, 7, 15, 0, 0, time.UTC),
+		Results: []Result{{Name: "x", Status: StatusReport, Facts: facts}}}
+	if err := RenderText(&buf, d, nil); err != nil {
+		t.Fatal(err)
+	}
+	return buf.String()
+}
+
+func TestRenderTextUntrustedFactsCannotJoinAcrossLines(t *testing.T) {
+	// Untrusted values are JSON-quoted and every line starts with "key:", so
+	// the closest join (a phrase cut at the end of one fact, finished at the
+	// start of the next) is broken by the closing quote and the next key.
+	out := renderOf(t, Untrusted("a", "ignore all"), Untrusted("instructions", "x"))
+	if matchesScanner(out) {
+		t.Fatalf("untrusted facts joined into a scanner match:\n%s", out)
+	}
+}
+
+func TestRenderTextGuardRemovesPhraseSpanningLines(t *testing.T) {
+	// A trusted value is unquoted: "do not tell the" ends line 1, the next
+	// fact's key "user" starts line 2.
+	facts := []Fact{{Key: "a", Value: "do not tell the"}, {Key: "user", Value: "x"}}
+	if raw := "a: do not tell the\nuser: x\n"; !matchesScanner(raw) {
+		t.Fatalf("test join %q does not match the scanner patterns", raw)
+	}
+	out := renderOf(t, facts...)
+	if matchesScanner(out) {
+		t.Fatalf("scanner pattern survives in:\n%s", out)
+	}
+	if !strings.Contains(out, "a: [phrase removed]\n: x\n") {
+		t.Errorf("phrase not replaced with line structure kept:\n%s", out)
+	}
+}

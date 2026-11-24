@@ -159,8 +159,27 @@ func RenderText(w io.Writer, d Doc, s *Secrets) error {
 		fmt.Fprintf(&b, " (%s)", strings.Join(sm.Errors, "; "))
 	}
 	b.WriteString("\n")
-	_, err := io.WriteString(w, b.String())
+	_, err := io.WriteString(w, guardScanner(b.String()))
 	return err
+}
+
+// guardScanner is the last line of defence: Sanitize works fact by fact, so a
+// phrase split over two lines (or one trusted value and the next key) would
+// escape it. Any scanner match in the whole text is replaced, line structure
+// kept (the patterns can span a newline: \s matches it).
+func guardScanner(text string) string {
+	for changed := true; changed; {
+		changed = false
+		for _, re := range ScannerPatterns {
+			if re.MatchString(text) {
+				text = re.ReplaceAllStringFunc(text, func(m string) string {
+					return phraseRemoved + strings.Repeat("\n", strings.Count(m, "\n"))
+				})
+				changed = true
+			}
+		}
+	}
+	return text
 }
 
 type jsonFact struct {

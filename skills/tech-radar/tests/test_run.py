@@ -5,6 +5,7 @@ import os
 import tempfile
 import threading
 import unittest
+from email.utils import format_datetime
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
@@ -27,8 +28,7 @@ GOLDEN_ITEMS = [
 ]
 
 
-def rss(source: str, n: int) -> bytes:
-    pub = "Sun, 22 Nov 2026 05:00:00 +0000"
+def rss(source: str, n: int, pub: str = "Sun, 22 Nov 2026 05:00:00 +0000") -> bytes:
     items = "".join(
         f"<item><title>{source} story {i}</title><link>https://{source.lower()}.example/{i}</link>"
         f"<description>{'A long enough description of the story. ' * 3}</description><pubDate>{pub}</pubDate></item>"
@@ -189,11 +189,14 @@ class MainTest(unittest.TestCase):
         key.write_text("sk-secret123\n")
         self.env = {"TECH_RADAR_KEY_FILE": str(key), "TECH_RADAR_VAULT": str(vault),
                     "TECH_RADAR_STATE": str(self.tmp / "seen.json")}
+        # main() runs on the real clock: an hour-old story stays inside max_age_hours
+        # whatever the day (a fixed date stopped passing once it aged out).
+        self.pub = format_datetime(datetime.now(timezone.utc) - timedelta(hours=1))
 
     def call_main(self):
         out, err = io.StringIO(), io.StringIO()
         with mock.patch.dict(os.environ, self.env), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), \
-                mock.patch("tech_radar.http_get", return_value=rss("Hacker News", 5)), \
+                mock.patch("tech_radar.http_get", return_value=rss("Hacker News", 5, pub=self.pub)), \
                 mock.patch("tech_radar.http_page", side_effect=page_ok):
             code = main()
         return code, out.getvalue(), err.getvalue()

@@ -1,0 +1,1 @@
+Write today's morning brief from the script output, following skill morning-brief.

@@ -7,7 +7,22 @@
 # ci/smoke.sh before it is pushed. Add a tool: a layer below + a check in
 # ci/smoke.sh, through a PR (AGENTS.md).
 ARG HERMES_VERSION=v0.23.1-desktop
-FROM nousresearch/hermes-agent:${HERMES_VERSION}@sha256:385725287c207b1517717167d8ac8631e5e7cd2d47a9954df18b6e95b6e5e78b
+FROM nousresearch/hermes-agent:${HERMES_VERSION}@sha256:385725287c207b1517717167d8ac8631e5e7cd2d47a9954df18b6e95b6e5e78b AS hermes
+
+# morning-brief (skills/morning-brief): the morning brief's data collector,
+# Go, vendored (no download at build). gofmt, vet and the tests run here, so a
+# red test fails the build and CI "image".
+FROM golang:1.27-bookworm@sha256:ce59b41415e2524ae99926fe1f37ce48ba8c194dcbd2a56a65436cdcefa2bd34 AS morning-brief
+ENV GOFLAGS=-mod=vendor GOTOOLCHAIN=local CGO_ENABLED=0
+WORKDIR /src
+COPY morning-brief/ ./
+RUN set -eux; \
+    test -z "$(gofmt -l cmd internal)"; \
+    go vet ./...; \
+    go test ./...; \
+    go build -trimpath -o /out/morning-brief ./cmd/morning-brief
+
+FROM hermes
 
 USER root
 
@@ -53,6 +68,8 @@ ENV GH_CONFIG_DIR=/opt/data/home/.config/gh \
     GIT_CONFIG_GLOBAL=/opt/data/home/.gitconfig \
     GH_NO_UPDATE_NOTIFIER=1 \
     GH_PROMPT_DISABLED=1
+
+COPY --from=morning-brief /out/morning-brief /usr/local/bin/morning-brief
 
 COPY rootfs/ /
 

@@ -51,7 +51,8 @@ func collectExpiries(_ context.Context, env *brief.Env, sc brief.SectionConfig) 
 			continue
 		}
 		seen[name] = true
-		raw, err := env.Secrets.Read(name)
+		// a date, not a secret: off the scrub list, or that date would vanish from the whole brief
+		raw, err := env.Secrets.ReadPublic(name)
 		if err != nil {
 			errs = append(errs, err.Error())
 			continue
@@ -65,7 +66,7 @@ func collectExpiries(_ context.Context, env *brief.Env, sc brief.SectionConfig) 
 		if days > cfg.WarnWithinDays {
 			continue
 		}
-		// The date itself is never printed: the file's content is on the scrub list.
+		// The date itself is never printed, only the day count.
 		val := fmt.Sprintf("in %d days", days)
 		if days < 0 {
 			val = fmt.Sprintf("expired %d days ago", -days)

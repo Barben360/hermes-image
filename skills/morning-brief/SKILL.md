@@ -22,8 +22,8 @@ already computed.
 ## Reading the output
 
 - `# morning-brief <time> <zone>`; `error: …` lines right below are config problems. With an
-  unreadable config file the brief runs on defaults but mail, GitHub and calendar are turned
-  off and not listed at all: their absence is not "nothing today".
+  unreadable config file the brief runs on defaults but mail, GitHub, calendar and Bugsink are
+  turned off and not listed at all: their absence is not "nothing today".
 - `## writer`: `language` (write the whole message in it), `order` (section order, the
   others after it in the order below), `notes` (the owner's preferences: apply them).
 - `## <section> [report|ok|error]`, then `key: value (as_of …)` facts and `- …` items.
@@ -53,7 +53,12 @@ already computed.
   context.
 - Car: every day, battery and range. Add when the data dates from (its `as_of`) when it is
   not from this morning, e.g. `(données d'hier 18:49)`. `warning: yes` → start with `⚠️`
-  and say it is below the threshold. An `hvac` fact: say the climate will not start.
+  and say it is below the threshold; `warning: unknown` → say the battery level is unknown.
+  An `hvac` fact: say the climate will not start.
+- Sensors: each `- sensor:` item is a sensor (or a whole device: `not heard since the HA
+  restart`) that stopped reporting. A `restart:` fact means Home Assistant restarted too
+  recently to tell dead sensors from quiet ones: say so in the `🛠️` line (sensors not
+  checked today), never that they are fine.
 - Mail: sort each one as delivery, banking operation, administration, personal or other,
   and show the important ones only (no advertising, newsletters, notifications).
 - Robot: `reminder: yes` → say since when; if the owner is away today, offer to run it
@@ -63,7 +68,7 @@ already computed.
 - Tech radar: when today's note exists, its vault path (`📰 Tech radar :
   Tech/Tech Radar/Dailies/2026/11/2026-11-25`); nothing when it does not.
 - Errors: one single `⚠️` line for everything that went wrong: each top `error:` line,
-  saying which sections it turned off (`⚠️ Config illisible : mail, GitHub, agenda coupés`),
+  saying which sections it turned off (`⚠️ Config illisible : mail, GitHub, agenda, Bugsink coupés`),
   then every section in error (`Source en erreur : github (jeton illisible), …`).
 
 ## Changing the brief (when the owner asks)
@@ -86,6 +91,9 @@ All changes go through the program, as hermes, from a shell in the container. It
   entity ids), one `key=value` argument each:
   `morning-brief config set car.battery=sensor.a car.range=sensor.b car.plug=sensor.c
   car.charging=binary_sensor.d car.target=number.e car.tracker=device_tracker.f`.
+  Optional `car.battery_timestamp=sensor.g`: an entity whose state is the time of the battery
+  data (a cloud integration's poll moves the battery's own report time, not the data's);
+  the battery's `as_of` is then that time.
 - Back to the default: `morning-brief config unset <section>.<key>`.
 - Then `morning-brief check`, and `morning-brief run --only <section>` to show the owner the
   result. The next brief follows.
@@ -105,7 +113,9 @@ All changes go through the program, as hermes, from a shell in the container. It
   `--script morning-brief/watch.sh`, same room: one line when today's brief was not
   delivered, nothing otherwise.
 - Time or room: `hermes cron edit <id>`, then check the record in
-  `$HERMES_HOME/cron/jobs.json`. Keep `enabled_toolsets: []` (without it the run gets every
+  `$HERMES_HOME/cron/jobs.json`. The watcher counts a run before 07:00 local as not the
+  morning's: moving the brief before 07:00 also needs `--after HH:MM` in `watch.sh` (a
+  hermes-image PR, see below). Keep `enabled_toolsets: []` (without it the run gets every
   cron tool while it reads third-party text) and `attach_to_session: true` (without it the
   room's session lacks the brief, so follow-ups like "lance le robot" lose context). Set
   both through the `cronjob` tool (`cronjob_manage`); the CLI has no flag for them.

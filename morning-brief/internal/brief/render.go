@@ -70,7 +70,7 @@ func summarize(rs []Result, s *Secrets) summary {
 			sm.OK++
 		case StatusError:
 			sm.Error++
-			sm.Errors = append(sm.Errors, oneLine(s.Scrub(r.Name))+": "+oneLine(s.Scrub(r.Err)))
+			sm.Errors = append(sm.Errors, oneLine(s.Scrub(r.Name))+": "+Sanitize(s.Scrub(r.Err)))
 		}
 		sm.Sections++
 	}
@@ -130,7 +130,8 @@ func RenderText(w io.Writer, d Doc, s *Secrets) error {
 		case StatusDisabled:
 			continue
 		case StatusError:
-			fmt.Fprintf(&b, "## %s [error]\n%s\n", oneLine(s.Scrub(r.Name)), oneLine(s.Scrub(r.Err)))
+			// an error can quote a source's answer: sanitised (and capped) like third-party text
+			fmt.Fprintf(&b, "## %s [error]\n%s\n", oneLine(s.Scrub(r.Name)), Sanitize(s.Scrub(r.Err)))
 			continue
 		case StatusOK:
 			line := "## " + oneLine(s.Scrub(r.Name)) + " [ok]"

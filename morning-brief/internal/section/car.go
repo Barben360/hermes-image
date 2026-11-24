@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Barben360/hermes-image/morning-brief/internal/brief"
 	"github.com/Barben360/hermes-image/morning-brief/internal/source/ha"
@@ -13,6 +14,7 @@ import (
 type CarConfig struct {
 	Enabled             bool   `yaml:"enabled"`
 	Battery             string `yaml:"battery"`               // sensor: state of charge in %
+	BatteryTimestamp    string `yaml:"battery_timestamp"`     // sensor, optional: ISO time of the battery data (a cloud poll moves last_reported, not the data)
 	Range               string `yaml:"range"`                 // sensor: remaining range in km
 	MaxRange            string `yaml:"max_range"`             // sensor, optional: range at 100 %
 	Plug                string `yaml:"plug"`                  // sensor: unplugged / plugged / plugged_waiting_for_charge…
@@ -50,7 +52,7 @@ func (c *CarConfig) Validate() error {
 	}
 	seen := map[string]string{}
 	all := append(required, []struct{ key, id string }{
-		{"max_range", c.MaxRange}, {"charge_state", c.ChargeState},
+		{"battery_timestamp", c.BatteryTimestamp}, {"max_range", c.MaxRange}, {"charge_state", c.ChargeState},
 		{"charge_time_remaining", c.ChargeTimeRemaining}, {"hvac_threshold", c.HVACThreshold},
 	}...)
 	for _, r := range all {
@@ -92,7 +94,8 @@ func collectCar(ctx context.Context, env *brief.Env, sc brief.SectionConfig) bri
 	get := func(id string) (ha.State, error) { return needState(snap, id) }
 	var (
 		battery, rng, plug, charging, target, tracker ha.State
-		maxRange, chargeState, remaining, hvac        ha.State
+		batteryTime, maxRange, chargeState, remaining ha.State
+		hvac                                          ha.State
 	)
 	for _, l := range []struct {
 		dst *ha.State
@@ -105,7 +108,7 @@ func collectCar(ctx context.Context, env *brief.Env, sc brief.SectionConfig) bri
 	for _, l := range []struct {
 		dst *ha.State
 		id  string
-	}{{&maxRange, cfg.MaxRange}, {&chargeState, cfg.ChargeState}, {&remaining, cfg.ChargeTimeRemaining}, {&hvac, cfg.HVACThreshold}} {
+	}{{&batteryTime, cfg.BatteryTimestamp}, {&maxRange, cfg.MaxRange}, {&chargeState, cfg.ChargeState}, {&remaining, cfg.ChargeTimeRemaining}, {&hvac, cfg.HVACThreshold}} {
 		if l.id == "" {
 			continue
 		}
@@ -122,7 +125,13 @@ func collectCar(ctx context.Context, env *brief.Env, sc brief.SectionConfig) bri
 	}
 
 	bat, batOK := number(battery)
-	res.Facts = append(res.Facts, brief.Fact{Key: "battery", Value: withUnit(battery, "%"), AsOf: reported(battery).In(env.Loc)})
+	asOf := reported(battery)
+	if cfg.BatteryTimestamp != "" {
+		if t, err := time.Parse(time.RFC3339, batteryTime.State); err == nil {
+			asOf = t
+		}
+	}
+	res.Facts = append(res.Facts, brief.Fact{Key: "battery", Value: withUnit(battery, "%"), AsOf: asOf.In(env.Loc)})
 	add("range", withUnit(rng, " km"))
 	if cfg.MaxRange != "" {
 		add("max_range", withUnit(maxRange, " km"))
@@ -141,7 +150,9 @@ func collectCar(ctx context.Context, env *brief.Env, sc brief.SectionConfig) bri
 		}
 	}
 	add("zone", tracker.State)
-	if batOK {
+	if !batOK {
+		add("warning", "unknown (no battery data)")
+	} else {
 		if bat < float64(cfg.WarnBelowPct) {
 			add("warning", fmt.Sprintf("yes (below %d%%)", cfg.WarnBelowPct))
 		} else {

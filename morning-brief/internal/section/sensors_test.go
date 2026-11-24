@@ -133,32 +133,126 @@ func TestSensorsIncludeExclude(t *testing.T) {
 	}
 }
 
-// TestSensorsDeadAcrossRestart: Home Assistant restarted at 03:00; Zigbee2MQTT's retained replay gave
-// every sensor a fresh state, so a dead one looks only 4 h old at 07:15.
-func TestSensorsDeadAcrossRestart(t *testing.T) {
+// restartSnap: the post-restart fixture (Home Assistant started 2026-11-25 03:01:20 UTC by the
+// nightly backup) moved by d; any report after now becomes the restart's replay (start + 2 min).
+func restartSnap(t *testing.T, d time.Duration, now time.Time) *ha.Snapshot {
+	t.Helper()
 	snap := loadSnapshot(t, "../../testdata/ha/states-after-restart.json")
-	env := haEnv(snap, nil) // 2026-11-25 07:15 Europe/Paris
+	start := time.Date(2026, 11, 25, 3, 1, 20, 0, time.UTC).Add(d)
+	for id, st := range snap.ByID {
+		for _, p := range []*time.Time{&st.LastChanged, &st.LastUpdated, &st.LastReported} {
+			*p = p.Add(d)
+			if p.After(now) {
+				*p = start.Add(2 * time.Minute)
+			}
+		}
+		snap.ByID[id] = st
+	}
+	return snap
+}
+
+func restartCfg() *SensorsConfig {
 	c := sensorsCfg()
 	c.Include = []string{"sensor.room_*_temperature", "sensor.room_*_humidity"}
-	r := collect(t, "sensors", env, c)
-	got := sensorNames(r)
-	for _, dead := range []string{"Room B Temperature", "Room B Humidity"} {
-		if !strings.Contains(got, "sensor=\""+dead+"\"") && !strings.Contains(got, "sensor="+dead+";") {
-			t.Errorf("dead %s not listed: %s", dead, got)
+	return c
+}
+
+func restartRun(t *testing.T, d time.Duration, now time.Time) brief.Result {
+	t.Helper()
+	env := haEnv(nil, nil)
+	env.Now = now.In(env.Loc)
+	snap := restartSnap(t, d, now)
+	env.HA = func(context.Context) (*ha.Snapshot, error) { return snap, nil }
+	return collect(t, "sensors", env, restartCfg())
+}
+
+// summer: the same nightly restart at 03:01 UTC, moved to a July day (Paris = UTC+2).
+const toSummer = -133 * 24 * time.Hour // 2026-11-25 → 2026-07-15
+
+// TestSensorsDeadAcrossRestart: Home Assistant restarted at 03:01 UTC by the backup; Zigbee2MQTT's
+// retained replay gave every sensor a fresh state, so a dead device looks 2 h old at 07:15. An MQTT
+// entity whose value did not change is not reported again: Room A's humidity is as old as the
+// replay, but its temperature moved, so Room A is alive.
+func TestSensorsDeadAcrossRestart(t *testing.T) {
+	for _, tc := range []struct {
+		name, at string
+		d        time.Duration
+		now      time.Time
+	}{
+		{"winter 06:15 UTC", "04:01", 0, time.Date(2026, 11, 25, 6, 15, 0, 0, time.UTC)},
+		{"summer 05:15 UTC", "05:01", toSummer, time.Date(2026, 7, 15, 5, 15, 0, 0, time.UTC)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := restartRun(t, tc.d, tc.now)
+			got := sensorNames(r)
+			wantItems := `sensor=Room B;status=not heard since the HA restart at ` + tc.at + `;` +
+				`sensor=Room D Humidity;status=no data (unknown);`
+			if r.Status != brief.StatusReport || got != wantItems {
+				t.Errorf("%s\n got %s\nwant %s", r.Status, got, wantItems)
+			}
+			if _, ok := fact(r, "restart"); ok {
+				t.Errorf("restart fact: %s", dump(r))
+			}
+		})
+	}
+}
+
+// TestSensorsTooSoonAfterRestart: on an image-update day Home Assistant restarts again at 04:31 UTC;
+// at 05:15 UTC (summer brief) it has been up 44 min, every sensor still looks like the replay, and
+// the brief says the sensors cannot be judged yet instead of saying nothing.
+func TestSensorsTooSoonAfterRestart(t *testing.T) {
+	r := restartRun(t, toSummer+90*time.Minute, time.Date(2026, 7, 15, 5, 15, 0, 0, time.UTC))
+	if r.Status != brief.StatusReport {
+		t.Fatalf("%s %s", r.Status, sensorNames(r))
+	}
+	want(t, r, "restart", "HA restarted at 06:31, dead sensors cannot be told yet")
+	if got := sensorNames(r); got != `sensor=Room D Humidity;status=no data (unknown);` {
+		t.Errorf("judged too early: %s", got)
+	}
+}
+
+// TestSensorsRestartBoundary: the device judgement starts at exactly 75 min of uptime.
+func TestSensorsRestartBoundary(t *testing.T) {
+	start := time.Date(2026, 11, 25, 3, 1, 20, 0, time.UTC)
+	r := restartRun(t, 0, start.Add(75*time.Minute))
+	if _, ok := fact(r, "restart"); ok || !strings.Contains(sensorNames(r), `sensor=Room B;status=not heard since the HA restart at 04:01;`) {
+		t.Errorf("75 min: %s / %s", dump(r), sensorNames(r))
+	}
+	r = restartRun(t, 0, start.Add(75*time.Minute-time.Second))
+	if strings.Contains(sensorNames(r), `sensor=Room B;`) {
+		t.Errorf("75 min - 1 s judged: %s", sensorNames(r))
+	}
+	want(t, r, "restart", "HA restarted at 04:01, dead sensors cannot be told yet")
+}
+
+func TestSensorsDeviceKeyAndName(t *testing.T) {
+	for id, k := range map[string]string{
+		"sensor.room_a_temperature": "room_a", "sensor.room_a_humidity": "room_a",
+		"sensor.kitchen": "kitchen", "binary_sensor.door_contact": "door",
+	} {
+		if got := deviceKey(id); got != k {
+			t.Errorf("deviceKey(%s) = %s, want %s", id, got, k)
 		}
 	}
-	for _, live := range []string{"Room A Temperature", "Room A Humidity", "Room C Temperature"} {
-		if strings.Contains(got, live) {
-			t.Errorf("live %s listed: %s", live, got)
+	st := func(n string) ha.State { return ha.State{Attributes: map[string]any{"friendly_name": n}} }
+	for want, sts := range map[string][]ha.State{
+		"Chambre":             {st("Chambre température"), st("Chambre humidité")},
+		"chambre":             {st("Température chambre"), st("Humidité chambre")},
+		"Salon":               {st("Salon")},
+		"Capteur 1 / Sonde 2": {st("Capteur 1"), st("Sonde 2")},
+	} {
+		if got := deviceName(sts); got != want {
+			t.Errorf("deviceName = %q, want %q", got, want)
 		}
 	}
-	if len(r.Items) != 2 {
-		t.Errorf("%d items: %s", len(r.Items), got)
-	}
-	// right after the restart nothing is judged yet
-	env.Now = time.Date(2026, 11, 25, 3, 30, 0, 0, env.Loc)
-	if r = collect(t, "sensors", env, c); len(r.Items) != 1 { // only the unknown one
-		t.Errorf("judged too early: %s", sensorNames(r))
+}
+
+// TestSensorsDeviceAllListedNotRepeated: a single-entity device already listed as unknown is not
+// listed a second time for the restart.
+func TestSensorsDeviceAllListedNotRepeated(t *testing.T) {
+	r := restartRun(t, 0, time.Date(2026, 11, 25, 6, 15, 0, 0, time.UTC))
+	if n := strings.Count(sensorNames(r), "Room D"); n != 1 {
+		t.Errorf("Room D listed %d times: %s", n, sensorNames(r))
 	}
 }
 

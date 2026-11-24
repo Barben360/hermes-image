@@ -23,6 +23,7 @@ func watchCmd(args []string, stdout, stderr io.Writer) int {
 	cm.register(fs)
 	job := fs.String("job", "morning-brief", "name of the Hermes cron job to check")
 	nowFlag := fs.String("now", "", "RFC3339 time to use instead of the clock")
+	afterFlag := fs.String("after", "07:00", "HH:MM (local): a run before this time is not the morning's (move it with the brief)")
 	fs.SetOutput(io.Discard)
 	if err := fs.Parse(args); err != nil {
 		return watchLine(stdout, nil, "option invalide : "+err.Error())
@@ -36,17 +37,21 @@ func watchCmd(args []string, stdout, stderr io.Writer) int {
 		}
 		now = t.In(loc)
 	}
+	after, err := time.Parse("15:04", *afterFlag)
+	if err != nil {
+		return watchLine(stdout, nil, "--after illisible (HH:MM)")
+	}
 	loaded := config.Load(cm.config, brief.Sections())
 	secrets := brief.NewSecrets(cm.secretsDir)
 	// Register every credential value so that no text printed below can carry one.
 	if ents, err := os.ReadDir(cm.secretsDir); err == nil {
 		for _, e := range ents {
-			if !e.IsDir() {
+			if !e.IsDir() && !brief.IsPublic(e.Name()) {
 				_, _ = secrets.Read(e.Name())
 			}
 		}
 	}
-	reason := judge(loaded.Sources.CronJobs, *job, now, loc)
+	reason := judge(loaded.Sources.CronJobs, *job, now, loc, after.Hour()*60+after.Minute())
 	if reason != "" {
 		return watchLine(stdout, secrets, reason)
 	}
@@ -68,8 +73,9 @@ func text(s *string) string {
 	return *s
 }
 
-// judge returns "" when the job delivered today's run, else the reason.
-func judge(path, name string, now time.Time, loc *time.Location) string {
+// judge returns "" when the job delivered today's run, else the reason. afterMin: minutes after
+// local midnight before which a run is not the morning's.
+func judge(path, name string, now time.Time, loc *time.Location, afterMin int) string {
 	if path == "" {
 		return "chemin de jobs.json non configuré"
 	}
@@ -106,8 +112,8 @@ func judge(path, name string, now time.Time, loc *time.Location) string {
 	if y1 != y2 || m1 != m2 || d1 != d2 {
 		return "pas lancé aujourd'hui (dernier lancement " + last.Format("2006-01-02 15:04") + ")"
 	}
-	if last.Hour() < 7 {
-		return "le dernier lancement date d'avant 07:00 (" + last.Format("15:04") + "), pas celui du matin"
+	if last.Hour()*60+last.Minute() < afterMin {
+		return fmt.Sprintf("le dernier lancement date d'avant %02d:%02d (%s), pas celui du matin", afterMin/60, afterMin%60, last.Format("15:04"))
 	}
 	if j.LastStatus == nil {
 		return "statut du dernier lancement absent"

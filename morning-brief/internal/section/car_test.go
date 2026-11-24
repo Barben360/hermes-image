@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Barben360/hermes-image/morning-brief/internal/brief"
+	"github.com/Barben360/hermes-image/morning-brief/internal/source/ha"
 )
 
 func carCfg() *CarConfig {
@@ -89,11 +90,44 @@ func TestCarChargeTimeOnlyWhileCharging(t *testing.T) {
 	want(t, r, "charge_state", "charge_in_progress")
 }
 
-func TestCarUnavailableBatteryHasNoWarning(t *testing.T) {
-	r := carRun(t, map[string]string{"sensor.car_battery": "unavailable"}, carCfg())
-	want(t, r, "battery", "unavailable")
-	if _, ok := fact(r, "warning"); ok {
-		t.Error("warning computed from an unavailable battery")
+func TestCarUnavailableBatteryWarnsUnknown(t *testing.T) {
+	for _, v := range []string{"unavailable", "unknown", "n/a"} {
+		r := carRun(t, map[string]string{"sensor.car_battery": v, "number.car_hvac_threshold": "8"}, carCfg())
+		want(t, r, "battery", "unavailable")
+		want(t, r, "warning", "unknown (no battery data)")
+		if _, ok := fact(r, "hvac"); ok {
+			t.Errorf("%s: hvac judged without a battery level", v)
+		}
+	}
+}
+
+// TestCarBatteryTimestampIsAsOf: a cloud integration polls the car, so the battery entity's
+// last_reported is the poll; the data's own time is a separate timestamp entity.
+func TestCarBatteryTimestampIsAsOf(t *testing.T) {
+	c := carCfg()
+	c.BatteryTimestamp = "sensor.car_battery_activity"
+	for state, asOf := range map[string]string{
+		"2026-11-24T16:12:00+00:00":        "2026-11-24T17:12", // UTC data time, printed in Paris time
+		"2026-11-24T16:12:00.123456+00:00": "2026-11-24T17:12",
+		"unknown":                          "2026-11-24T18:49", // unreadable: last_reported, as without the key
+	} {
+		snap := haFixture(t, nil)
+		snap.ByID[c.BatteryTimestamp] = ha.State{EntityID: c.BatteryTimestamp, State: state,
+			Attributes: map[string]any{"device_class": "timestamp"}}
+		r := collect(t, "car", haEnv(snap, nil), c)
+		f, ok := fact(r, "battery")
+		if !ok || f.AsOf.Format("2006-01-02T15:04") != asOf || f.AsOf.Location().String() != "Europe/Paris" {
+			t.Errorf("%s: as_of %s (%s), want %s", state, f.AsOf, f.AsOf.Location(), asOf)
+		}
+	}
+	// a configured timestamp entity that does not exist is an error, like every configured id
+	r := collect(t, "car", haEnv(haFixture(t, nil), nil), c)
+	if r.Status != brief.StatusError || !strings.Contains(r.Err, c.BatteryTimestamp) {
+		t.Errorf("%s %q", r.Status, r.Err)
+	}
+	c.BatteryTimestamp = c.Battery
+	if c.Validate() == nil {
+		t.Error("battery_timestamp = battery accepted")
 	}
 }
 

@@ -75,11 +75,14 @@ func TestExpiriesSurvivesScrubbedRender(t *testing.T) {
 	if len(r.Items) != 1 {
 		t.Fatalf("duplicate file names must collapse, items %d", len(r.Items))
 	}
+	// the expiry file holds a date, not a secret: the same date elsewhere in the brief stays
+	other := brief.Result{Name: "calendar", Status: brief.StatusReport, Facts: []brief.Fact{{Key: "day", Value: "2026-12-24"}}}
 	var out bytes.Buffer
-	if err := brief.RenderText(&out, brief.Doc{Now: env.Now, Results: []brief.Result{r}}, env.Secrets); err != nil {
+	if err := brief.RenderText(&out, brief.Doc{Now: env.Now, Results: []brief.Result{r, other}}, env.Secrets); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "near: in 29 days") || strings.Contains(out.String(), "[redacted]") {
+	if !strings.Contains(out.String(), "near: in 29 days") || !strings.Contains(out.String(), "day: 2026-12-24") ||
+		strings.Contains(out.String(), "[redacted]") {
 		t.Fatalf("%s", out.String())
 	}
 }

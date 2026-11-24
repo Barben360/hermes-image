@@ -64,8 +64,19 @@ func TestWatchFailsOnBlockedRun(t *testing.T) {
 
 func TestWatchFailsOnYesterdaysRun(t *testing.T)  { wantLine(t, "yesterday", "aujourd'hui") }
 func TestWatchFailsOnRunBeforeSeven(t *testing.T) { wantLine(t, "early", "07:00") }
-func TestWatchFailsOnNeverRun(t *testing.T)       { wantLine(t, "never", "jamais") }
-func TestWatchFailsOnPausedJob(t *testing.T)      { wantLine(t, "paused", "désactivé") }
+
+// TestWatchAfterMovesTheMorning: a brief moved earlier needs --after; the early fixture ran at 06:30.
+func TestWatchAfterMovesTheMorning(t *testing.T) {
+	code, out, _ := runWatch(t, "early", "--after", "06:30")
+	if code != 0 || out != "" {
+		t.Errorf("06:30 run with --after 06:30: exit %d %q", code, out)
+	}
+	wantLine(t, "early", "avant 06:31", "--after", "06:31")
+	wantLine(t, "early", "--after", "--after", "7h")
+}
+
+func TestWatchFailsOnNeverRun(t *testing.T)  { wantLine(t, "never", "jamais") }
+func TestWatchFailsOnPausedJob(t *testing.T) { wantLine(t, "paused", "désactivé") }
 func TestWatchFailsOnUnverifiedDelivery(t *testing.T) {
 	wantLine(t, "unverified", "non vérifiée")
 }

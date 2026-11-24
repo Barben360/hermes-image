@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	_ "time/tzdata" // Europe/Paris without the system's zoneinfo
 
 	"gopkg.in/yaml.v3"
 
@@ -218,7 +219,11 @@ func checkCmd(args []string, stdout, stderr io.Writer) int {
 			continue
 		}
 		for _, c := range s.Credentials {
-			if _, err := secrets.Read(c); err != nil {
+			read := secrets.Read
+			if brief.IsPublic(c) {
+				read = secrets.ReadPublic
+			}
+			if _, err := read(c); err != nil {
 				fmt.Fprintf(stdout, "%s: %s not readable\n", s.Name, c)
 				problems++
 			}

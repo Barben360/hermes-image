@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"path"
 	"sort"
@@ -24,6 +25,7 @@ type Client struct {
 	BaseURL, Token string // BaseURL without scheme means https
 	HTTP           *http.Client
 	Rec            Recorder
+	Dial           func(ctx context.Context, network, addr string) (net.Conn, error) // WebSocket only; nil = default
 }
 
 const maxBody = 32 << 20

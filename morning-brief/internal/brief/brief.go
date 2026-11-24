@@ -69,3 +69,18 @@ func Sections() []Section {
 	defer regMu.Unlock()
 	return append([]Section(nil), registry...)
 }
+
+// UseSectionsForTest replaces the registry with ss (copied) and returns a function that puts the
+// previous contents back. For tests only: it keeps sections registered by init() of imported
+// packages out of a test's view.
+func UseSectionsForTest(ss ...Section) (restore func()) {
+	regMu.Lock()
+	defer regMu.Unlock()
+	prev := registry
+	registry = append([]Section(nil), ss...)
+	return func() {
+		regMu.Lock()
+		defer regMu.Unlock()
+		registry = prev
+	}
+}

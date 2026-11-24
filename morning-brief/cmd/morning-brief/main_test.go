@@ -48,15 +48,23 @@ type fakeCfg struct {
 func (c *fakeCfg) IsEnabled() bool { return c.Enabled }
 func (c *fakeCfg) Validate() error { return nil }
 
-func init() {
-	brief.Register(brief.Section{
+// TestMain isolates the registry: real sections registered by internal/section never reach these tests.
+func TestMain(m *testing.M) {
+	restore := brief.UseSectionsForTest(fakeSection())
+	code := m.Run()
+	restore()
+	os.Exit(code)
+}
+
+func fakeSection() brief.Section {
+	return brief.Section{
 		Name: "fakeA", Description: "test section", Credentials: []string{"tok"},
 		Default: func() brief.SectionConfig { return &fakeCfg{Enabled: true, Hours: 24} },
 		Collect: func(ctx context.Context, env *brief.Env, c brief.SectionConfig) brief.Result {
 			return brief.Result{Status: brief.StatusOK, Facts: []brief.Fact{
 				{Key: "visible_things", Value: "3"}, {Key: "hidden", Value: "x"}, {Key: "ha", Value: env.Sources.HAURL}}}
 		},
-	})
+	}
 }
 
 func TestCheckReportsMissingCredential(t *testing.T) {

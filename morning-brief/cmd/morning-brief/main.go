@@ -15,21 +15,29 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/Barben360/hermes-image/morning-brief/internal/brief"
+	"github.com/Barben360/hermes-image/morning-brief/internal/config"
 	_ "github.com/Barben360/hermes-image/morning-brief/internal/section"
 )
 
-const defaultZone = "Europe/Paris"
+const (
+	defaultZone   = "Europe/Paris"
+	defaultConfig = "/opt/data/morning-brief/config.yaml"
+)
 
 func main() { os.Exit(realMain(os.Args[1:], os.Stdout, os.Stderr)) }
 
 func realMain(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: morning-brief run|sections")
+		fmt.Fprintln(stderr, "usage: morning-brief run|check|sections|config")
 		return 2
 	}
 	switch args[0] {
 	case "run":
 		return runCmd(args[1:], stdout, stderr)
+	case "check":
+		return checkCmd(args[1:], stdout, stderr)
+	case "config":
+		return configCmd(args[1:], stdout, stderr)
 	case "sections":
 		return sectionsCmd(stdout, stderr)
 	}
@@ -37,26 +45,67 @@ func realMain(args []string, stdout, stderr io.Writer) int {
 	return 2
 }
 
+// common holds the flags every command reading the config shares.
+type common struct {
+	config, secretsDir string
+}
+
+func (c *common) register(fs *flag.FlagSet) {
+	fs.StringVar(&c.config, "config", defaultConfig, "owner's overrides")
+	fs.StringVar(&c.secretsDir, "secrets-dir", "/run/secrets", "directory of credential files")
+}
+
+// parseInterleaved parses flags wherever they stand among the positional arguments.
+func parseInterleaved(fs *flag.FlagSet, args []string) ([]string, error) {
+	var pos []string
+	for {
+		if err := fs.Parse(args); err != nil {
+			return nil, err
+		}
+		args = fs.Args()
+		if len(args) == 0 {
+			return pos, nil
+		}
+		pos = append(pos, args[0])
+		args = args[1:]
+	}
+}
+
+func newEnv(now time.Time, loc *time.Location, secrets *brief.Secrets, src brief.Sources) *brief.Env {
+	return &brief.Env{
+		Now:     now,
+		Loc:     loc,
+		HTTP:    &http.Client{Timeout: 15 * time.Second},
+		Dial:    (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+		Secrets: secrets,
+		Sources: src,
+	}
+}
+
+func location() *time.Location {
+	loc, err := time.LoadLocation(defaultZone)
+	if err != nil {
+		return time.UTC
+	}
+	return loc
+}
+
 func runCmd(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	config := fs.String("config", "/opt/data/morning-brief/config.yaml", "owner's overrides (read by the config package, later)")
-	secretsDir := fs.String("secrets-dir", "/run/secrets", "directory of credential files")
+	var cm common
+	cm.register(fs)
 	only := fs.String("only", "", "comma-separated sections")
 	format := fs.String("format", "text", "text or json")
 	nowFlag := fs.String("now", "", "RFC3339 time to use instead of the clock")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	_ = config
 	if *format != "text" && *format != "json" {
 		fmt.Fprintf(stderr, "unknown format %q\n", *format)
 		return 2
 	}
-	loc, err := time.LoadLocation(defaultZone)
-	if err != nil {
-		loc = time.UTC
-	}
+	loc := location()
 	now := time.Now().In(loc)
 	if *nowFlag != "" {
 		t, err := time.Parse(time.RFC3339, *nowFlag)
@@ -66,20 +115,15 @@ func runCmd(args []string, stdout, stderr io.Writer) int {
 		}
 		now = t.In(loc)
 	}
-	secrets := brief.NewSecrets(*secretsDir)
-	env := &brief.Env{
-		Now:     now,
-		Loc:     loc,
-		HTTP:    &http.Client{Timeout: 15 * time.Second},
-		Dial:    (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
-		Secrets: secrets,
-	}
-	plan := brief.Plan{}
+	loaded := config.Load(cm.config, brief.Sections())
+	secrets := brief.NewSecrets(cm.secretsDir)
+	env := newEnv(now, loc, secrets, loaded.Sources)
+	plan := loaded.Plan
 	if *only != "" {
 		plan.Only = strings.Split(*only, ",")
 	}
 	results := brief.Run(context.Background(), env, plan)
-	doc := brief.Doc{Now: now, Writer: brief.WriterConfig{Language: "fr"}, Results: results}
+	doc := brief.Doc{Now: now, Writer: loaded.Writer, TopErrors: loaded.TopErrors, Results: results}
 	render := brief.RenderText
 	if *format == "json" {
 		render = brief.RenderJSON
@@ -89,6 +133,125 @@ func runCmd(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// checkCmd validates the effective config and the credential files; --live also calls each enabled source.
+func checkCmd(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("check", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	var cm common
+	cm.register(fs)
+	live := fs.Bool("live", false, "also call each enabled source once")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	sections := brief.Sections()
+	loaded := config.Load(cm.config, sections)
+	secrets := brief.NewSecrets(cm.secretsDir)
+	problems := 0
+	for _, e := range loaded.TopErrors {
+		fmt.Fprintf(stdout, "config: %s\n", secrets.Scrub(e))
+		problems++
+	}
+	for _, s := range sections {
+		if msg, bad := loaded.Plan.ConfigErrors[s.Name]; bad {
+			fmt.Fprintf(stdout, "%s: config: %s\n", s.Name, secrets.Scrub(msg))
+			problems++
+			continue
+		}
+		cfg, ok := loaded.Plan.Configs[s.Name]
+		if !ok || !cfg.IsEnabled() {
+			continue
+		}
+		for _, c := range s.Credentials {
+			if _, err := secrets.Read(c); err != nil {
+				fmt.Fprintf(stdout, "%s: %s not readable\n", s.Name, c)
+				problems++
+			}
+		}
+	}
+	if *live {
+		loc := location()
+		env := newEnv(time.Now().In(loc), loc, secrets, loaded.Sources)
+		for _, r := range brief.Run(context.Background(), env, loaded.Plan) {
+			if r.Status == brief.StatusDisabled {
+				continue
+			}
+			line := fmt.Sprintf("%s: %s", r.Name, r.Status)
+			if r.Err != "" {
+				line += ": " + r.Err
+				problems++
+			}
+			fmt.Fprintln(stdout, secrets.Scrub(line))
+			for _, f := range r.Facts {
+				if strings.HasPrefix(f.Key, "visible_") {
+					fmt.Fprintln(stdout, secrets.Scrub(fmt.Sprintf("  %s: %s", f.Key, f.Value)))
+				}
+			}
+		}
+	}
+	if problems > 0 {
+		return 1
+	}
+	fmt.Fprintln(stdout, "check: ok")
+	return 0
+}
+
+// configCmd is how the owner (through Jerry) reads and changes the config.
+func configCmd(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("config", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	var cm common
+	cm.register(fs)
+	effective := fs.Bool("effective", false, "show the merged config instead of the owner's file")
+	pos, err := parseInterleaved(fs, args)
+	if err != nil {
+		return 2
+	}
+	usage := func() int {
+		fmt.Fprintln(stderr, "usage: morning-brief config show [--effective] | set <section>.<key> <value> | unset <section>.<key>")
+		return 2
+	}
+	if len(pos) == 0 {
+		return usage()
+	}
+	sections := brief.Sections()
+	fail := func(err error) int {
+		fmt.Fprintf(stderr, "config %s: %v\n", pos[0], err)
+		return 1
+	}
+	switch {
+	case pos[0] == "show" && len(pos) == 1:
+		if *effective {
+			b, err := config.Effective(cm.config, sections)
+			if err != nil {
+				return fail(err)
+			}
+			stdout.Write(b)
+			return 0
+		}
+		b, err := os.ReadFile(cm.config)
+		if err != nil && !os.IsNotExist(err) {
+			return fail(err)
+		}
+		if os.IsNotExist(err) {
+			fmt.Fprintln(stdout, "# no overrides: every default applies")
+			return 0
+		}
+		stdout.Write(b)
+		return 0
+	case pos[0] == "set" && len(pos) == 3:
+		if err := config.Set(cm.config, sections, pos[1], pos[2]); err != nil {
+			return fail(err)
+		}
+		return 0
+	case pos[0] == "unset" && len(pos) == 2:
+		if err := config.Unset(cm.config, sections, pos[1]); err != nil {
+			return fail(err)
+		}
+		return 0
+	}
+	return usage()
 }
 
 func sectionsCmd(stdout, stderr io.Writer) int {

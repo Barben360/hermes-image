@@ -101,16 +101,23 @@ func memoHA(env *brief.Env) func(context.Context) (*ha.Snapshot, error) {
 			if token, err = env.Secrets.Read("ha_token"); err != nil {
 				return
 			}
+			// the shared fetch belongs to no one section: key its recording on "ha", not on whoever asked first
 			c := &ha.Client{BaseURL: env.Sources.HAURL, Token: token, HTTP: env.HTTP, Rec: env.Rec}
-			snap, err = c.States(ctx)
+			snap, err = c.States(brief.WithSection(ctx, "ha"))
 		})
 		return snap, err
 	}
 }
 
 // useRecorder routes the HTTP client through rec; sources that save their own answers use env.Rec.
-func useRecorder(env *brief.Env, rec brief.Recorder) {
+// In replay nothing may reach the network: raw dials (IMAP) fail.
+func useRecorder(env *brief.Env, rec brief.Recorder, replay bool) {
 	env.Rec = rec
+	if replay {
+		env.Dial = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return nil, fmt.Errorf("connection not recorded in replay")
+		}
+	}
 	hc := *env.HTTP
 	hc.Transport = brief.NewRecordingTransport(hc.Transport, rec)
 	env.HTTP = &hc
@@ -161,9 +168,9 @@ func runCmd(args []string, stdout, stderr io.Writer) int {
 	env := newEnv(now, loc, secrets, loaded.Sources)
 	switch {
 	case *recordDir != "":
-		useRecorder(env, brief.NewDirRecorder(*recordDir, secrets, false))
+		useRecorder(env, brief.NewDirRecorder(*recordDir, secrets, false), false)
 	case *replayDir != "":
-		useRecorder(env, brief.NewDirRecorder(*replayDir, secrets, true))
+		useRecorder(env, brief.NewDirRecorder(*replayDir, secrets, true), true)
 	}
 	plan := loaded.Plan
 	if *only != "" {

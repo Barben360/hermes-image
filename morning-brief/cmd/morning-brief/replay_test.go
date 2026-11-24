@@ -8,7 +8,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/Barben360/hermes-image/morning-brief/internal/brief"
 )
@@ -65,5 +67,14 @@ func TestReplayReproducesRun(t *testing.T) {
 	var out, errb bytes.Buffer
 	if code := realMain(append(append([]string{}, base...), "--record", rdir, "--replay", rdir), &out, &errb); code != 2 {
 		t.Errorf("--record with --replay: exit %d", code)
+	}
+}
+
+func TestReplayNeverDials(t *testing.T) {
+	env := newEnv(time.Now(), time.UTC, brief.NewSecrets(t.TempDir()), brief.Sources{})
+	useRecorder(env, brief.NewDirRecorder(t.TempDir(), env.Secrets, true), true)
+	conn, err := env.Dial(context.Background(), "tcp", "127.0.0.1:1")
+	if err == nil || conn != nil || !strings.Contains(err.Error(), "not recorded in replay") {
+		t.Errorf("dial in replay: %v %v", conn, err)
 	}
 }

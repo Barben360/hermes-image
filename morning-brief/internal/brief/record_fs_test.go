@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -97,5 +98,74 @@ func TestReplayServesRecordedAnswersWithoutNetwork(t *testing.T) {
 	}
 	if hits != 1 {
 		t.Errorf("hits %d", hits)
+	}
+}
+
+func TestReplayKeysBySectionAndBodyUnderConcurrency(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		w.Write([]byte("answer-to-" + string(b)))
+	}))
+	dir := t.TempDir()
+	type call struct{ section, body string }
+	calls := []call{{"a", "one"}, {"b", "two"}, {"a", "three"}, {"b", "one"}}
+	do := func(c *http.Client, k call) string {
+		ctx := WithSection(context.Background(), k.section)
+		req, _ := http.NewRequestWithContext(ctx, "POST", srv.URL+"/same", strings.NewReader(k.body))
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Error(err)
+			return ""
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return string(b)
+	}
+	live := &http.Client{Transport: NewRecordingTransport(nil, NewDirRecorder(dir, NewSecrets(t.TempDir()), false))}
+	for _, k := range calls {
+		do(live, k)
+	}
+	srv.Close()
+	for round := 0; round < 20; round++ {
+		rp := &http.Client{Transport: NewRecordingTransport(nil, NewDirRecorder(dir, NewSecrets(t.TempDir()), true))}
+		var wg sync.WaitGroup
+		for _, k := range calls {
+			wg.Add(1)
+			go func(k call) {
+				defer wg.Done()
+				if got := do(rp, k); got != "answer-to-"+k.body {
+					t.Errorf("%s/%s got %q", k.section, k.body, got)
+				}
+			}(k)
+		}
+		wg.Wait()
+	}
+}
+
+func TestRecordedBodyDropsCoordinatesAndFailsLoudlyOnSaveError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"latitude":45.0,"longitude":5.0,"hourly":{"t":[1]}}`))
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	c := &http.Client{Transport: NewRecordingTransport(nil, NewDirRecorder(dir, NewSecrets(t.TempDir()), false))}
+	resp, err := c.Get(srv.URL + "/v1/forecast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	files, _ := filepath.Glob(filepath.Join(dir, "*"))
+	if all := readAll(t, files); strings.Contains(all, "latitude") || !strings.Contains(all, "hourly") {
+		t.Errorf("recorded: %s", all)
+	}
+	// a directory that cannot be written makes the request fail rather than record nothing
+	bad := filepath.Join(dir, "afile")
+	os.WriteFile(bad, nil, 0o600)
+	c2 := &http.Client{Transport: NewRecordingTransport(nil, NewDirRecorder(filepath.Join(bad, "sub"), NewSecrets(t.TempDir()), false))}
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv2.Close()
+	if resp, err := c2.Get(srv2.URL + "/x"); err == nil {
+		resp.Body.Close()
+		t.Error("record failure must fail the request")
 	}
 }

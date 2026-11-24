@@ -12,23 +12,31 @@ import (
 type Job struct {
 	ID                     string          `json:"id"`
 	Name                   string          `json:"name"`
-	Enabled                bool            `json:"enabled"`
+	Enabled                *bool           `json:"enabled"`
 	State                  string          `json:"state"`
 	LastRunAt              *string         `json:"last_run_at"`
 	LastStatus             *string         `json:"last_status"`
 	LastError              *string         `json:"last_error"`
 	LastDeliveryError      *string         `json:"last_delivery_error"`
 	LastDeliveryUnverified json.RawMessage `json:"last_delivery_unverified"`
+	FireClaim              json.RawMessage `json:"fire_claim"`
 	FailureStreak          int             `json:"failure_streak"`
+}
+
+// Claimed reports whether the scheduler holds a fire claim (a run is starting or in flight).
+func (j Job) Claimed() bool { return present(j.FireClaim) }
+
+func present(r json.RawMessage) bool {
+	switch string(r) {
+	case "", "null", "false", "0", `""`, "{}", "[]":
+		return false
+	}
+	return true
 }
 
 // Unverified reports whether Hermes flagged the last delivery as unconfirmed (anything but absent, null or false).
 func (j Job) Unverified() bool {
-	switch string(j.LastDeliveryUnverified) {
-	case "", "null", "false", "0", `""`:
-		return false
-	}
-	return true
+	return present(j.LastDeliveryUnverified)
 }
 
 // Load parses the file. A file that is not {"jobs":[...]} is an error, never an empty list.

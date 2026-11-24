@@ -23,16 +23,16 @@ func watchCmd(args []string, stdout, stderr io.Writer) int {
 	cm.register(fs)
 	job := fs.String("job", "morning-brief", "name of the Hermes cron job to check")
 	nowFlag := fs.String("now", "", "RFC3339 time to use instead of the clock")
+	fs.SetOutput(io.Discard)
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return watchLine(stdout, nil, "option invalide : "+err.Error())
 	}
 	loc := location()
 	now := time.Now().In(loc)
 	if *nowFlag != "" {
 		t, err := time.Parse(time.RFC3339, *nowFlag)
 		if err != nil {
-			fmt.Fprintf(stderr, "bad --now: %v\n", err)
-			return 2
+			return watchLine(stdout, nil, "--now illisible")
 		}
 		now = t.In(loc)
 	}
@@ -48,12 +48,19 @@ func watchCmd(args []string, stdout, stderr io.Writer) int {
 	}
 	reason := judge(loaded.Sources.CronJobs, *job, now, loc)
 	if reason != "" {
-		fmt.Fprintln(stdout, watchPrefix+brief.Sanitize(secrets.Scrub(reason)))
+		return watchLine(stdout, secrets, reason)
 	}
 	return 0
 }
 
-// text makes a third-party string safe before it joins a reason.
+// watchLine prints the alert line (third-party text scrubbed, sanitised, capped) and returns exit code 0:
+// a watcher that fails to run would be silent, so even a bad flag ends in the line.
+func watchLine(stdout io.Writer, secrets *brief.Secrets, reason string) int {
+	fmt.Fprintln(stdout, watchPrefix+brief.Sanitize(secrets.Scrub(reason)))
+	return 0
+}
+
+// text returns the string a nullable JSON field points to, "" for null.
 func text(s *string) string {
 	if s == nil {
 		return ""
@@ -80,8 +87,11 @@ func judge(path, name string, now time.Time, loc *time.Location) string {
 	if j == nil {
 		return "job " + name + " introuvable dans jobs.json"
 	}
-	if !j.Enabled || (j.State != "" && j.State != "scheduled" && j.State != "running") {
+	if j.Enabled == nil || !*j.Enabled || (j.State != "" && j.State != "scheduled" && j.State != "running") {
 		return fmt.Sprintf("job désactivé ou en pause (état %s)", j.State)
+	}
+	if j.State == "running" || j.Claimed() {
+		return "le job est encore en cours d'exécution"
 	}
 	if j.LastRunAt == nil || *j.LastRunAt == "" {
 		return "le job n'a jamais été lancé"
@@ -101,6 +111,9 @@ func judge(path, name string, now time.Time, loc *time.Location) string {
 	}
 	if j.LastStatus == nil {
 		return "statut du dernier lancement absent"
+	}
+	if *j.LastStatus == "delivery_queued" {
+		return "livraison en attente"
 	}
 	if *j.LastStatus != "ok" {
 		r := "statut " + *j.LastStatus

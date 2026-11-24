@@ -66,7 +66,7 @@ func Run(ctx context.Context, env *Env, p Plan) []Result {
 		ch := make(chan Result, 1) // buffered: a section ignoring ctx never blocks on send
 		chans[i] = ch
 		go func(s Section, cfg SectionConfig) {
-			sctx, scancel := context.WithTimeout(ctx, secTO)
+			sctx, scancel := context.WithTimeout(WithSection(ctx, s.Name), secTO)
 			defer scancel()
 			ch <- collectSafe(sctx, env, s, cfg)
 		}(s, cfg)

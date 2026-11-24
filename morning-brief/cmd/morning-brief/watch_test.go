@@ -79,3 +79,15 @@ func TestWatchFailsOnBadShapeOrMissingFile(t *testing.T) {
 	wantLine(t, "noshape", "jobs.json")
 	wantLine(t, "does-not-exist", "jobs.json")
 }
+
+func TestWatchFailsOnRunningQueuedClaimedOrNoEnabled(t *testing.T) {
+	wantLine(t, "running", "en cours")
+	wantLine(t, "claimed", "en cours")
+	wantLine(t, "queued", "livraison en attente")
+	wantLine(t, "noenabled", "désactivé")
+}
+
+func TestWatchBadFlagOrNowStillExitsZeroWithLine(t *testing.T) {
+	wantLine(t, "delivered", "--now", "--now", "garbage")
+	wantLine(t, "delivered", "option", "--bogus")
+}

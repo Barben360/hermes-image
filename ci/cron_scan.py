@@ -50,7 +50,8 @@ job = {
 }
 try:
     assembled = _build_job_prompt(job, prerun_script=(True, output))
-    hits["run-time assembly"] = ""
+    # None = no agent turn (Hermes skips the model on an empty stdout): no brief either.
+    hits["run-time assembly"] = "" if assembled is not None else "no prompt built (no brief)"
 except sched.CronPromptInjectionBlocked as exc:
     assembled = None
     hits["run-time assembly"] = str(exc) or "blocked"

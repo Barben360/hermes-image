@@ -19,6 +19,17 @@
       "platformAutomerge": true
     },
     {
+      "description": "Go toolchain of the morning-brief build stage: tag and digest bumps in one PR, reviewed by the owner (no automerge).",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "golang"
+      ],
+      "groupName": "golang build image",
+      "automerge": false
+    },
+    {
       "matchManagers": [
         "github-actions"
       ],

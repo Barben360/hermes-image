@@ -203,7 +203,7 @@ x sh -c 'rm -rf /opt/data/scripts/tech-radar && ln -s /etc/cont-init.d /opt/data
 x sh -c 'rm -rf /opt/data/scripts/morning-brief && ln -s /etc/cont-init.d /opt/data/scripts/morning-brief'
 x sh -c 'rm -rf /opt/data/morning-brief && ln -s /opt/hermes/skills/homelab/morning-brief /opt/data/morning-brief'
 image_files() {
-    docker exec "$NAME" sh -c 'stat -c "%n %U %a %s" /opt/hermes/README.md /etc/cont-init.d /etc/cont-init.d/* /usr/local/bin/morning-brief /opt/hermes/skills/homelab/morning-brief /opt/hermes/skills/homelab/morning-brief/*; md5sum /etc/cont-init.d/* /opt/hermes/skills/homelab/morning-brief/*; find /etc/cont-init.d /opt/hermes /opt/hermes/skills/homelab/morning-brief -maxdepth 1 -user hermes'
+    docker exec "$NAME" sh -c 'stat -c "%n %U %a %s" /opt/hermes/README.md /etc/cont-init.d /etc/cont-init.d/* /usr/local/bin/morning-brief /opt/hermes/skills/homelab/morning-brief /opt/hermes/skills/homelab/morning-brief/*; md5sum /etc/cont-init.d/* /usr/local/bin/morning-brief /opt/hermes/skills/homelab/morning-brief/*; find /etc/cont-init.d /opt/hermes /opt/hermes/skills/homelab/morning-brief -maxdepth 1 -user hermes'
 }
 BEFORE=$(image_files)
 start with-token
@@ -218,5 +218,13 @@ check "morning-brief scripts dir rebuilt in place of the symlink" \
     x sh -c 'test ! -L /opt/data/scripts/morning-brief && test -s /opt/data/scripts/morning-brief/run.sh && test -s /opt/data/scripts/morning-brief/watch.sh'
 check "a symlinked /opt/data/morning-brief is left alone, not followed" \
     x sh -c 'test -L /opt/data/morning-brief && test "$(readlink /opt/data/morning-brief)" = /opt/hermes/skills/homelab/morning-brief'
+
+# File-level plants: the scripts dir is real again, its files point at image files.
+x sh -c 'ln -sf /usr/local/bin/morning-brief /opt/data/scripts/morning-brief/run.sh && ln -sf /etc/cont-init.d/70-homelab-morning-brief /opt/data/scripts/morning-brief/watch.sh'
+BEFORE=$(image_files)
+start
+check "symlinked morning-brief scripts change no image file" test "$BEFORE" = "$(image_files)"
+check "morning-brief scripts rewritten in place of the symlinks" \
+    x sh -c "for f in run.sh watch.sh; do test ! -L $MB_DST/\$f && cmp $MB_SRC/\$f $MB_DST/\$f || exit 1; done"
 
 exit $fail

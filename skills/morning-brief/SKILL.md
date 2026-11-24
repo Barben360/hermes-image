@@ -21,7 +21,9 @@ already computed.
 
 ## Reading the output
 
-- `# morning-brief <time> <zone>`; `error: …` lines right below are config problems.
+- `# morning-brief <time> <zone>`; `error: …` lines right below are config problems. With an
+  unreadable config file the brief runs on defaults but mail, GitHub and calendar are turned
+  off and not listed at all: their absence is not "nothing today".
 - `## writer`: `language` (write the whole message in it), `order` (section order, the
   others after it in the order below), `notes` (the owner's preferences: apply them).
 - `## <section> [report|ok|error]`, then `key: value (as_of …)` facts and `- …` items.
@@ -56,21 +58,35 @@ already computed.
   and show the important ones only (no advertising, newsletters, notifications).
 - Robot: `reminder: yes` → say since when; if the owner is away today, offer to run it
   then. Offers only: this run has no tools, the owner asks in the room and you act there.
-- Errors: every section in error in one single line, `⚠️ Source en erreur : github (jeton
-  illisible), …`.
+- Presence: context only (robot offer, weather of a trip), no line of its own unless the
+  owner is away and it matters for the day.
+- Tech radar: when today's note exists, its vault path (`📰 Tech radar :
+  Tech/Tech Radar/Dailies/2026/11/2026-11-25`); nothing when it does not.
+- Errors: one single `⚠️` line for everything that went wrong: each top `error:` line,
+  saying which sections it turned off (`⚠️ Config illisible : mail, GitHub, agenda coupés`),
+  then every section in error (`Source en erreur : github (jeton illisible), …`).
 
 ## Changing the brief (when the owner asks)
 
 All changes go through the program, as hermes, from a shell in the container. Its config is
 `/opt/data/morning-brief/config.yaml`, the owner's overrides only (defaults are built in;
-`config set` keeps the previous version as `config.yaml.prev`).
+`config set` creates it, validates before writing and keeps the previous version as
+`config.yaml.prev`).
 
 - What exists: `morning-brief sections` (each section, what it shows, its keys and
   defaults). Sections added by an image update arrive disabled: offer them, enable on a yes.
 - Look: `morning-brief config show` (overrides), `config show --effective` (everything).
-- Change: `morning-brief config set <section>.<key> <value>` / `config unset <section>.<key>`,
-  e.g. `config set mail.enabled false`, `config set robot.remind_after_days 4`,
-  `config set writer.notes "car first, I'm always cold"`, `config set mail.drop_senders …`.
+- Change one key: `morning-brief config set <section>.<key> <value>`; the value is read as
+  YAML, and a list replaces the old list (repeat the items you keep). Examples:
+  `morning-brief config set mail.enabled false` ("no more mail info"),
+  `morning-brief config set robot.remind_after_days 4`,
+  `morning-brief config set writer.notes "car first, I'm always cold"`,
+  `morning-brief config set mail.drop_senders='[news@example.org, "@promo.example.com"]'`.
+- Several keys checked together (a section valid only once all are set, e.g. the car's
+  entity ids), one `key=value` argument each:
+  `morning-brief config set car.battery=sensor.a car.range=sensor.b car.plug=sensor.c
+  car.charging=binary_sensor.d car.target=number.e car.tracker=device_tracker.f`.
+- Back to the default: `morning-brief config unset <section>.<key>`.
 - Then `morning-brief check`, and `morning-brief run --only <section>` to show the owner the
   result. The next brief follows.
 - Never edit this skill, its scripts or the binary (an edited bundled skill stops receiving
@@ -81,7 +97,7 @@ All changes go through the program, as hermes, from a shell in the container. It
 ## The jobs
 
 - `morning-brief`: `15 7 * * *` Europe/Paris, agent mode, `--script morning-brief/run.sh`,
-  `--skill morning-brief`, `--catch-up on`, low reasoning effort, delivered (and failures
+  `--skill morning-brief`, `--catch-up on`, `--reasoning-effort low`, delivered (and failures
   too) to `💬 Général` (the tech-radar job's room: read its id from that job's record), per-job
   `enabled_toolsets: []` and `attach_to_session: true`. Its prompt is exactly
   `job-prompt.txt` next to this file (the smoke test scanned that text with this skill).

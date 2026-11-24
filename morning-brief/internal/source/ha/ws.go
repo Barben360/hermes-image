@@ -42,8 +42,17 @@ func (c *Client) wsURL() string {
 // WS connects and authenticates with the token, dialing through c.Dial when set (Env.Dial).
 func (c *Client) WS(ctx context.Context) (*WSConn, error) {
 	hc := &http.Client{}
+	if c.HTTP != nil {
+		hc.Transport = c.HTTP.Transport // same TLS settings as the REST calls
+	}
 	if c.Dial != nil {
-		hc.Transport = &http.Transport{DialContext: c.Dial}
+		tr := &http.Transport{DialContext: c.Dial}
+		if c.HTTP != nil {
+			if base, ok := c.HTTP.Transport.(*http.Transport); ok && base.TLSClientConfig != nil {
+				tr.TLSClientConfig = base.TLSClientConfig.Clone()
+			}
+		}
+		hc.Transport = tr
 	}
 	conn, _, err := websocket.Dial(ctx, c.wsURL(), &websocket.DialOptions{HTTPClient: hc})
 	if err != nil {
@@ -214,18 +223,20 @@ func (w *WSConn) DailyChange(ctx context.Context, statIDs []string, from, to tim
 	if err := json.Unmarshal(raw, &wire); err != nil {
 		return nil, fmt.Errorf("Home Assistant: statistics answer unreadable")
 	}
+	if len(statIDs) > 0 && len(wire) == 0 {
+		return nil, fmt.Errorf("Home Assistant: statistics answer is empty (no recorded data for the requested ids)")
+	}
 	out := make(map[string][]DayValue, len(wire))
 	for id, rows := range wire {
 		for _, r := range rows {
+			if r.Change == nil { // no value for that day: not a data day
+				continue
+			}
 			t, err := parseStatTime(r.Start)
 			if err != nil {
 				return nil, fmt.Errorf("Home Assistant: bad statistics time on %s", id)
 			}
-			ch := 0.0
-			if r.Change != nil {
-				ch = *r.Change
-			}
-			out[id] = append(out[id], DayValue{Start: t, Change: ch})
+			out[id] = append(out[id], DayValue{Start: t, Change: *r.Change})
 		}
 	}
 	return out, nil

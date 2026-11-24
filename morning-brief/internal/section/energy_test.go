@@ -1,7 +1,10 @@
 package section
 
 import (
+	"context"
 	"encoding/json"
+	"math"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -21,6 +24,8 @@ const energyToken = "tok-energy-secret-123"
 type fakeHA struct {
 	mu       sync.Mutex
 	authFail bool
+	emptyAns bool                          // statistics_during_period answers {}
+	now      time.Time                     // zero = the default fake clock
 	stats    map[string]map[string]float64 // stat id -> "2006-01-02" -> change
 	requests []map[string]any              // statistics_during_period requests
 }
@@ -87,10 +92,17 @@ func (f *fakeHA) serve(t *testing.T, loc *time.Location) *httptest.Server {
 					days := f.stats[id.(string)]
 					for d, ch := range days {
 						day, _ := time.ParseInLocation("2006-01-02", d, loc)
+						var change any = ch
+						if math.IsNaN(ch) {
+							change = nil
+						}
 						out[id.(string)] = append(out[id.(string)], map[string]any{
-							"start": day.UnixMilli(), "end": day.AddDate(0, 0, 1).UnixMilli(), "change": ch,
+							"start": day.UnixMilli(), "end": day.AddDate(0, 0, 1).UnixMilli(), "change": change,
 						})
 					}
+				}
+				if f.emptyAns {
+					out = map[string][]map[string]any{}
 				}
 				res["result"] = out
 			default:
@@ -165,6 +177,9 @@ func runEnergy(t *testing.T, f *fakeHA) (brief.Result, *fakeHA) {
 	srv := f.serve(t, loc)
 	defer srv.Close()
 	env := energyEnv(t, srv)
+	if !f.now.IsZero() {
+		env.Now = f.now
+	}
 	return collect(t, "energy", env, newEnergyConfig()), f
 }
 
@@ -275,5 +290,95 @@ func TestEnergyDefaultEnabled(t *testing.T) {
 	c := newEnergyConfig()
 	if !c.IsEnabled() || c.Validate() != nil {
 		t.Fatal("energy must default to enabled and valid")
+	}
+}
+
+func TestEnergyMeterMissingYesterdayIsNoData(t *testing.T) {
+	st := defaultStats()
+	for _, id := range []string{"sensor.meter_base", "sensor.meter_offpeak", "sensor.meter_base_cost", "sensor.meter_offpeak_cost"} {
+		delete(st[id], "2026-11-24")
+		delete(st[id], "2026-11-17")
+	}
+	r, _ := runEnergy(t, &fakeHA{stats: st})
+	// The subscription's zero-kWh sensor and its cost still have rows both days.
+	if f, _ := fact(r, "electricity yesterday"); f.Value != "no data for 2026-11-24" {
+		t.Fatalf("yesterday %q", f.Value)
+	}
+	// 17th has only subscription rows: skipped, so 6 days (6..11 -> 8.5) + offpeak 1.
+	if f, _ := fact(r, "electricity avg 7d"); !strings.HasPrefix(f.Value, "9.5 kWh") {
+		t.Fatalf("avg %q", f.Value)
+	}
+}
+
+func TestEnergyMissingCostSeriesIsUnknownNotZero(t *testing.T) {
+	st := defaultStats()
+	delete(st["sensor.meter_offpeak_cost"], "2026-11-24")
+	r, _ := runEnergy(t, &fakeHA{stats: st})
+	if f, _ := fact(r, "electricity yesterday"); f.Value != "14.0 kWh, cost unknown" {
+		t.Fatalf("yesterday %q", f.Value)
+	}
+	if f, _ := fact(r, "electricity avg 7d"); f.Value != "9.0 kWh, 2.17 €" {
+		t.Fatalf("avg %q", f.Value)
+	}
+	delete(st, "sensor.gas_filtered_cost_2")
+	r, _ = runEnergy(t, &fakeHA{stats: st})
+	if f, _ := fact(r, "gas latest complete day 2026-11-23"); f.Value != "32.0 kWh, cost unknown" {
+		t.Fatalf("gas %q", f.Value)
+	}
+}
+
+func TestEnergyNullChangeIsNotADataDay(t *testing.T) {
+	st := defaultStats()
+	st["sensor.meter_base"]["2026-11-24"] = math.NaN()
+	st["sensor.meter_offpeak"]["2026-11-24"] = math.NaN()
+	r, _ := runEnergy(t, &fakeHA{stats: st})
+	if f, _ := fact(r, "electricity yesterday"); f.Value != "no data for 2026-11-24" {
+		t.Fatalf("yesterday %q", f.Value)
+	}
+}
+
+func TestEnergyEmptyStatisticsAnswerIsError(t *testing.T) {
+	r, _ := runEnergy(t, &fakeHA{emptyAns: true})
+	if r.Status != brief.StatusError || len(r.Facts) != 0 {
+		t.Fatalf("status %s facts %v", r.Status, r.Facts)
+	}
+}
+
+func TestEnergyUsesEnvDial(t *testing.T) {
+	loc, _ := time.LoadLocation("Europe/Paris")
+	f := &fakeHA{stats: defaultStats()}
+	srv := f.serve(t, loc)
+	defer srv.Close()
+	env := energyEnv(t, srv)
+	dialed := 0
+	env.Dial = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		dialed++
+		return (&net.Dialer{}).DialContext(ctx, network, addr)
+	}
+	if r := collect(t, "energy", env, newEnergyConfig()); r.Status != brief.StatusReport {
+		t.Fatalf("status %s err %q", r.Status, r.Err)
+	}
+	if dialed == 0 {
+		t.Fatal("Env.Dial was not used")
+	}
+}
+
+func TestEnergyAcrossDSTChange(t *testing.T) {
+	loc, _ := time.LoadLocation("Europe/Paris")
+	// Summer time ended on 2026-10-25: yesterday is a 25-hour day.
+	st := map[string]map[string]float64{
+		"sensor.meter_base":         {"2026-10-24": 5, "2026-10-25": 12},
+		"sensor.meter_base_cost":    {"2026-10-24": 1, "2026-10-25": 2.4},
+		"sensor.meter_offpeak":      {"2026-10-25": 2},
+		"sensor.meter_offpeak_cost": {"2026-10-25": 0.3},
+		"sensor.elec_sub_cumul":     {"2026-10-25": 0.5},
+	}
+	r, fk := runEnergy(t, &fakeHA{stats: st, now: time.Date(2026, 10, 26, 7, 15, 0, 0, loc)})
+	if f, _ := fact(r, "electricity yesterday"); f.Value != "14.0 kWh, 3.20 €" {
+		t.Fatalf("yesterday %q\n%s", f.Value, dump(r))
+	}
+	req := fk.requests[0]
+	if req["start_time"] != "2026-10-15T22:00:00Z" || req["end_time"] != "2026-10-25T23:00:00Z" {
+		t.Fatalf("window %v .. %v", req["start_time"], req["end_time"])
 	}
 }

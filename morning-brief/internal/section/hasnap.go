@@ -3,6 +3,7 @@ package section
 import (
 	"context"
 	"fmt"
+	"path"
 	"strconv"
 	"time"
 
@@ -47,3 +48,46 @@ func reported(st ha.State) time.Time {
 }
 
 func trim(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
+
+// entityName is the entity's friendly name, or its id.
+func entityName(st ha.State) string {
+	if n, ok := st.Attributes["friendly_name"].(string); ok && n != "" {
+		return n
+	}
+	return st.EntityID
+}
+
+// stamp is a time as printed in the brief: local date and minutes.
+func stamp(t time.Time, loc *time.Location) string { return t.In(loc).Format("2006-01-02 15:04") }
+
+// matchAny reports whether id matches one of the path.Match patterns.
+func matchAny(patterns []string, id string) bool {
+	for _, p := range patterns {
+		if ok, _ := path.Match(p, id); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func inList(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+// matchGlob wraps path.Match so a config can be checked for malformed patterns.
+func matchGlob(pattern, s string) (bool, error) { return path.Match(pattern, s) }
+
+const maxItems = 20
+
+// capItems keeps the first maxItems items and says how many were left out.
+func capItems(res *brief.Result) {
+	if n := len(res.Items) - maxItems; n > 0 {
+		res.Items = res.Items[:maxItems]
+		res.Facts = append(res.Facts, brief.Fact{Key: "more", Value: fmt.Sprintf("+%d more", n)})
+	}
+}

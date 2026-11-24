@@ -155,7 +155,7 @@ func collectMail(t *testing.T, env *brief.Env, mod func(*MailConfig)) brief.Resu
 	return collectMailSection(context.Background(), env, c)
 }
 
-func fact(facts []brief.Fact, key string) (brief.Fact, bool) {
+func mailFact(facts []brief.Fact, key string) (brief.Fact, bool) {
 	for _, f := range facts {
 		if f.Key == key {
 			return f, true
@@ -167,7 +167,7 @@ func fact(facts []brief.Fact, key string) (brief.Fact, bool) {
 func subjects(r brief.Result) []string {
 	var out []string
 	for _, it := range r.Items {
-		if f, ok := fact(it.Facts, "subject"); ok {
+		if f, ok := mailFact(it.Facts, "subject"); ok {
 			out = append(out, f.Value)
 		}
 	}
@@ -269,7 +269,7 @@ func TestMailFilters(t *testing.T) {
 			t.Errorf("unexpected %q listed", s)
 		}
 	}
-	f, ok := fact(res.Facts, "unread_24h")
+	f, ok := mailFact(res.Facts, "unread_24h")
 	if !ok || f.Value != "2 (after filters; 3 dropped)" {
 		t.Errorf("unread_24h = %+v", f)
 	}
@@ -312,7 +312,7 @@ func TestMailWindowUsesInternalDate(t *testing.T) {
 	if len(got) != 1 || got[0] != "recent" {
 		t.Fatalf("got %v", got)
 	}
-	f, _ := fact(res.Facts, "unread_24h")
+	f, _ := mailFact(res.Facts, "unread_24h")
 	if !strings.HasPrefix(f.Value, "1 ") {
 		t.Errorf("unread_24h = %q", f.Value)
 	}
@@ -330,12 +330,12 @@ func TestMailFieldsUntrusted(t *testing.T) {
 	}
 	for _, it := range res.Items {
 		for _, key := range []string{"from", "subject"} {
-			f, ok := fact(it.Facts, key)
+			f, ok := mailFact(it.Facts, key)
 			if !ok || !f.Untrusted {
 				t.Errorf("%s fact %+v must be untrusted", key, f)
 			}
 		}
-		s, _ := fact(it.Facts, "subject")
+		s, _ := mailFact(it.Facts, "subject")
 		if utf8.RuneCountInString(s.Value) > 120 {
 			t.Errorf("subject not capped: %d runes", utf8.RuneCountInString(s.Value))
 		}
@@ -424,7 +424,7 @@ func TestMailEmptyIsOK(t *testing.T) {
 	if res.Status != brief.StatusOK {
 		t.Fatalf("status %s: %s", res.Status, res.Err)
 	}
-	if f, _ := fact(res.Facts, "unread_24h"); f.Value != "0 (after filters; 0 dropped)" {
+	if f, _ := mailFact(res.Facts, "unread_24h"); f.Value != "0 (after filters; 0 dropped)" {
 		t.Errorf("unread_24h = %q", f.Value)
 	}
 }

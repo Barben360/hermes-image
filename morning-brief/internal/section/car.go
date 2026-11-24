@@ -127,7 +127,7 @@ func collectCar(ctx context.Context, env *brief.Env, sc brief.SectionConfig) bri
 	add("target", withUnit(target, "%"))
 	if cfg.ChargeTimeRemaining != "" && isCharging {
 		if m, ok := number(remaining); ok {
-			add("charge", "done in "+duration(int(m)))
+			add("charge", "done in "+minutesText(int(m)))
 		}
 	}
 	add("zone", tracker.State)
@@ -154,8 +154,8 @@ func yesNo(b bool) string {
 	return "no"
 }
 
-// duration prints minutes as "2 h 12", or "45 min" under an hour.
-func duration(min int) string {
+// minutesText prints minutes as "2 h 12", or "45 min" under an hour.
+func minutesText(min int) string {
 	if min < 60 {
 		return fmt.Sprintf("%d min", min)
 	}

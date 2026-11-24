@@ -1,0 +1,16 @@
+# Embedded defaults of morning-brief. The owner's file holds only overrides.
+# Sections' own defaults live in their Go code (see `morning-brief sections`).
+writer:
+  language: fr
+  order: []
+  notes: ""
+sources:
+  ha_url: ha.bbarrois.tech
+  grafana_url: http://grafana:3000
+  pcb_url: https://proton-calendar-bridge:1080/mcp
+  pcb_ca: /etc/hermes-ca/pcb.pem
+  imap_config: /etc/himalaya/config.toml
+  bugsink_url: http://bugsink:8000
+  bugsink_host: erreurs.infirlib.fr
+  vault_dir: /opt/vault
+  cron_jobs: /opt/data/cron/jobs.json

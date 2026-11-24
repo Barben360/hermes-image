@@ -43,6 +43,7 @@ type energyPair struct{ energy, cost string }
 // energyKind is one commodity. One source without a resolvable cost id makes the whole commodity "cost unknown".
 type energyKind struct {
 	pairs      []energyPair
+	seen       bool // the prefs hold a source of this type, whatever its shape
 	noCostInfo bool
 }
 
@@ -190,14 +191,17 @@ func collectEnergy(ctx context.Context, env *brief.Env, _ brief.SectionConfig) b
 	for _, s := range prefs.EnergySources {
 		switch s.Type {
 		case "grid":
-			for _, f := range s.FlowFrom {
+			elec.seen = true
+			for _, f := range s.FlowFrom { // older HA
 				elec.add(f.StatEnergyFrom, f.StatCost, info)
 			}
+			elec.add(s.StatEnergyFrom, s.StatCost, info) // newer HA: flat, no flow_from
 		case "gas":
+			gas.seen = true
 			gas.add(s.StatEnergyFrom, s.StatCost, info)
 		}
 	}
-	if len(elec.pairs) == 0 && len(gas.pairs) == 0 {
+	if !elec.seen && !gas.seen {
 		return fail(fmt.Errorf("Home Assistant: the Energy panel has no grid or gas source"))
 	}
 
@@ -213,6 +217,9 @@ func collectEnergy(ctx context.Context, env *brief.Env, _ brief.SectionConfig) b
 	add := func(k, v string) { res.Facts = append(res.Facts, brief.Fact{Key: k, Value: v}) }
 
 	yesterday := today.AddDate(0, 0, -1)
+	if elec.seen && len(elec.pairs) == 0 {
+		add("electricity", "no data (no readable grid source in the Energy panel)")
+	}
 	if len(elec.pairs) > 0 {
 		ykey := yesterday.Format(energyDayFormat)
 		if kwh, eur, ok, known := e.day(ykey); ok {
@@ -225,6 +232,9 @@ func collectEnergy(ctx context.Context, env *brief.Env, _ brief.SectionConfig) b
 		} else {
 			add("electricity avg 7d", fmtAmount(kwh, eur, known))
 		}
+	}
+	if gas.seen && len(gas.pairs) == 0 {
+		add("gas", "no data (no readable gas source in the Energy panel)")
 	}
 	if len(gas.pairs) > 0 {
 		var days []string

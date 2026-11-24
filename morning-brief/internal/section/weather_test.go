@@ -41,10 +41,25 @@ func zoneSnap(zones ...string) *ha.Snapshot {
 
 // weatherServer serves the fixture and records every request query.
 func weatherServer(t *testing.T, status int) (*httptest.Server, *[]string) {
+	return weatherServerBody(t, status, nil)
+}
+
+// weatherServerBody is weatherServer with the fixture rewritten by edit (a decoded JSON object).
+func weatherServerBody(t *testing.T, status int, edit func(m map[string]any)) (*httptest.Server, *[]string) {
 	t.Helper()
 	body, err := os.ReadFile("../../testdata/openmeteo/forecast.json")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if edit != nil {
+		var m map[string]any
+		if err := json.Unmarshal(body, &m); err != nil {
+			t.Fatal(err)
+		}
+		edit(m)
+		if body, err = json.Marshal(m); err != nil {
+			t.Fatal(err)
+		}
 	}
 	var mu sync.Mutex
 	var queries []string
@@ -231,5 +246,103 @@ func TestWeatherConditionWords(t *testing.T) {
 		if got := wmoCondition(code); got != w {
 			t.Errorf("%d = %q, want %q", code, got, w)
 		}
+	}
+}
+
+func TestWeatherStaleForecastIsNotNoRain(t *testing.T) {
+	srv, _ := weatherServerBody(t, 200, func(m map[string]any) {
+		h := m["hourly"].(map[string]any)
+		ts := h["time"].([]any)
+		for i := range ts { // shift every hour to 2026-11-20/21
+			ts[i] = strings.Replace(ts[i].(string), "2026-11-2", "2026-11-1", 1)
+			ts[i] = strings.Replace(ts[i].(string), "2026-11-15", "2026-11-20", 1)
+			ts[i] = strings.Replace(ts[i].(string), "2026-11-16", "2026-11-21", 1)
+		}
+	})
+	r := weatherRun(t, weatherCfg(srv.URL), zoneSnap("zone.home", "zone.office"), nil)
+	if f, ok := fact(r, "rain home"); ok {
+		t.Errorf("printed rain home = %q from a forecast without today", f.Value)
+	}
+	if r.Status != brief.StatusError || !strings.Contains(r.Err, "no entry for today") {
+		t.Errorf("%s %q", r.Status, r.Err)
+	}
+}
+
+func TestWeatherStaleForecastAloneIsSectionError(t *testing.T) {
+	srv, _ := weatherServerBody(t, 200, func(m map[string]any) {
+		h := m["hourly"].(map[string]any)
+		ts := h["time"].([]any)
+		for i := range ts {
+			ts[i] = "2026-11-01T" + ts[i].(string)[11:]
+		}
+	})
+	c := weatherCfg(srv.URL)
+	c.Slots = nil
+	r := weatherRun(t, c, zoneSnap("zone.home"), nil)
+	if r.Status != brief.StatusError || !strings.Contains(r.Err, "no entry") {
+		t.Errorf("%s %q", r.Status, r.Err)
+	}
+}
+
+func TestWeatherPrimaryPlaceFallsBackToFirstSlot(t *testing.T) {
+	srv, _ := weatherServer(t, 200)
+	c := weatherCfg(srv.URL)
+	c.Places = map[string]string{"base": "zone.home", "work": "zone.office"}
+	c.Slots[0].Place = "base"
+	r := weatherRun(t, c, zoneSnap("zone.home", "zone.office"), nil)
+	want(t, r, "rain base", "10:00-14:00 (p 80%, 4 mm)")
+	if _, ok := fact(r, "now"); !ok {
+		t.Error("now missing")
+	}
+}
+
+func TestWeatherRequestAsksKmh(t *testing.T) {
+	srv, queries := weatherServer(t, 200)
+	weatherRun(t, weatherCfg(srv.URL), zoneSnap("zone.home", "zone.office"), nil)
+	if len(*queries) == 0 || !strings.Contains((*queries)[0], "wind_speed_unit=kmh") {
+		t.Errorf("queries %v", *queries)
+	}
+}
+
+func TestWeatherNullProbabilityIsUnknownNotFatal(t *testing.T) {
+	srv, _ := weatherServerBody(t, 200, func(m map[string]any) {
+		p := m["hourly"].(map[string]any)["precipitation_probability"].([]any)
+		p[7], p[8] = nil, nil // the départ slot
+		p[20] = nil           // later today, outside every slot
+	})
+	r := weatherRun(t, weatherCfg(srv.URL), zoneSnap("zone.home", "zone.office"), nil)
+	if r.Status != brief.StatusReport {
+		t.Fatalf("%s %s", r.Status, r.Err)
+	}
+	want(t, r, "slot 07:30-08:30 home", "départ: min 3°C, feels min 1°C, rain p ?, 0.2 mm, gusts 27 km/h")
+	want(t, r, "rain home", "10:00-14:00 (p 80%, 4 mm); p unknown for 3 h")
+	want(t, r, "slot 12:00-14:00 work", "min 9°C, feels min 7°C, rain p 70%, 2 mm, gusts 25 km/h")
+}
+
+func TestWeatherNullTemperatureStillFails(t *testing.T) {
+	srv, _ := weatherServerBody(t, 200, func(m map[string]any) {
+		m["hourly"].(map[string]any)["temperature_2m"].([]any)[3] = nil
+	})
+	r := weatherRun(t, weatherCfg(srv.URL), zoneSnap("zone.home", "zone.office"), nil)
+	if r.Status != brief.StatusError || !strings.Contains(r.Err, "incomplete") {
+		t.Errorf("%s %q", r.Status, r.Err)
+	}
+}
+
+func TestWeatherPartialFactWhenSlotsFail(t *testing.T) {
+	srv, _ := weatherServer(t, 200)
+	r := weatherRun(t, weatherCfg(srv.URL), zoneSnap("zone.home"), nil)
+	want(t, r, "partial", "2 slot(s) failed")
+	if r.Facts[0].Key != "partial" {
+		t.Errorf("partial is not the first fact: %s", dump(r))
+	}
+	ok := okWeather(t)
+	if _, has := fact(ok, "partial"); has {
+		t.Error("partial printed on a clean run")
+	}
+	c := weatherCfg(srv.URL)
+	c.Places["work"] = ""
+	if _, has := fact(weatherRun(t, c, zoneSnap("zone.home"), nil), "partial"); has {
+		t.Error("a skipped (unconfigured) slot is not a failure")
 	}
 }

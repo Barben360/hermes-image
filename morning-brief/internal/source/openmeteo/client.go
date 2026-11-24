@@ -27,6 +27,7 @@ type Hour struct {
 	Time                                        time.Time
 	Temp, Feels, PrecipProb, Precip, Wind, Gust float64
 	Code                                        int
+	ProbUnknown                                 bool // precipitation_probability was null: PrecipProb is 0 and meaningless
 }
 
 // Day is one forecast day.
@@ -74,6 +75,7 @@ func Fetch(ctx context.Context, hc *http.Client, rec Recorder, baseURL, name str
 	q.Set("longitude", fmt.Sprintf("%.2f", lon))
 	q.Set("hourly", "temperature_2m,apparent_temperature,precipitation_probability,precipitation,wind_speed_10m,wind_gusts_10m,weather_code")
 	q.Set("daily", "temperature_2m_min,temperature_2m_max,sunrise,sunset")
+	q.Set("wind_speed_unit", "kmh")
 	q.Set("forecast_days", "2")
 	q.Set("timezone", "Europe/Paris")
 	sep := "?"
@@ -119,7 +121,10 @@ func parse(b []byte) (*Forecast, error) {
 	if n == 0 {
 		return nil, fmt.Errorf("Open-Meteo: no hourly data")
 	}
-	cols := [][]*float64{h.Temp, h.Feels, h.Prob, h.Precip, h.Wind, h.Gust, h.Code}
+	cols := [][]*float64{h.Temp, h.Feels, h.Precip, h.Wind, h.Gust, h.Code}
+	if len(h.Prob) != n {
+		return nil, fmt.Errorf("Open-Meteo: incomplete forecast")
+	}
 	for _, c := range cols {
 		if len(c) != n {
 			return nil, fmt.Errorf("Open-Meteo: incomplete forecast")
@@ -136,8 +141,14 @@ func parse(b []byte) (*Forecast, error) {
 		if err != nil {
 			return nil, fmt.Errorf("Open-Meteo: bad time")
 		}
-		f.Hourly = append(f.Hourly, Hour{Time: t, Temp: *h.Temp[i], Feels: *h.Feels[i], PrecipProb: *h.Prob[i],
-			Precip: *h.Precip[i], Wind: *h.Wind[i], Gust: *h.Gust[i], Code: int(*h.Code[i])})
+		hr := Hour{Time: t, Temp: *h.Temp[i], Feels: *h.Feels[i],
+			Precip: *h.Precip[i], Wind: *h.Wind[i], Gust: *h.Gust[i], Code: int(*h.Code[i])}
+		if h.Prob[i] == nil {
+			hr.ProbUnknown = true
+		} else {
+			hr.PrecipProb = *h.Prob[i]
+		}
+		f.Hourly = append(f.Hourly, hr)
 	}
 	d := w.Daily
 	m := len(d.Time)

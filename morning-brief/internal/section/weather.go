@@ -72,6 +72,14 @@ func parseClock(s string) (int, error) {
 	return t.Hour()*60 + t.Minute(), nil
 }
 
+// primary is the place of now/today/rain/tomorrow/sun: "home" if configured, else the first slot's place.
+func (c *WeatherConfig) primary() string {
+	if _, ok := c.Places["home"]; ok || len(c.Slots) == 0 {
+		return "home"
+	}
+	return c.Slots[0].Place
+}
+
 func init() {
 	brief.Register(brief.Section{
 		Name:        "weather",
@@ -154,28 +162,34 @@ func collectWeather(ctx context.Context, env *brief.Env, sc brief.SectionConfig)
 	var errs []string
 	wall := wallClock(env.Now.In(env.Loc))
 
-	if hf, herr := fetch("home"); herr != nil {
-		res.Facts = append(res.Facts, brief.Fact{Key: "home", Value: failText(herr)})
+	primary := cfg.primary()
+	if hf, herr := fetch(primary); herr != nil {
+		res.Facts = append(res.Facts, brief.Fact{Key: primary, Value: failText(herr)})
+		errs = append(errs, herr.Error())
+	} else if hfacts, herr := homeFacts(hf, wall, cfg, primary); herr != nil {
+		res.Facts = append(res.Facts, brief.Fact{Key: primary, Value: failText(herr)})
 		errs = append(errs, herr.Error())
 	} else {
 		okCount++
-		res.Facts = append(res.Facts, homeFacts(hf, wall, cfg)...)
+		res.Facts = append(res.Facts, hfacts...)
 	}
+	failed := 0
 	for _, s := range cfg.Slots {
 		key := "slot " + s.From + "-" + s.To + " " + s.Place
 		fc, err := fetch(s.Place)
+		var v string
+		if err == nil {
+			v, err = slotText(fc, wall, s)
+		}
 		if err != nil {
 			res.Facts = append(res.Facts, brief.Fact{Key: key, Value: failText(err)})
 			errs = append(errs, err.Error())
+			if !strings.HasPrefix(err.Error(), "skipped:") {
+				failed++
+			}
 			continue
 		}
 		okCount++
-		v, err := slotText(fc, wall, s)
-		if err != nil {
-			res.Facts = append(res.Facts, brief.Fact{Key: key, Value: failText(err)})
-			errs = append(errs, err.Error())
-			continue
-		}
 		res.Facts = append(res.Facts, brief.Fact{Key: key, Value: v})
 	}
 	if okCount == 0 {
@@ -184,6 +198,9 @@ func collectWeather(ctx context.Context, env *brief.Env, sc brief.SectionConfig)
 		return res
 	}
 	res.Status = brief.StatusReport
+	if failed > 0 {
+		res.Facts = append([]brief.Fact{{Key: "partial", Value: fmt.Sprintf("%d slot(s) failed", failed)}}, res.Facts...)
+	}
 	return res
 }
 
@@ -254,25 +271,50 @@ func sumOf(hs []openmeteo.Hour, f func(openmeteo.Hour) float64) float64 {
 	return s
 }
 
-func homeFacts(fc *openmeteo.Forecast, now time.Time, cfg *WeatherConfig) []brief.Fact {
+// probText is the highest known rain probability; "?" when none is known, "+?" when some hours are unknown.
+func probText(hs []openmeteo.Hour) string {
+	m, known, unknown := 0.0, 0, 0
+	for _, h := range hs {
+		if h.ProbUnknown {
+			unknown++
+			continue
+		}
+		known++
+		m = math.Max(m, h.PrecipProb)
+	}
+	switch {
+	case known == 0:
+		return "?"
+	case unknown > 0:
+		return pct(m) + "+?"
+	}
+	return pct(m)
+}
+
+func homeFacts(fc *openmeteo.Forecast, now time.Time, cfg *WeatherConfig, place string) ([]brief.Fact, error) {
 	var out []brief.Fact
 	add := func(k, v string) { out = append(out, brief.Fact{Key: k, Value: v}) }
 	today := dayHours(fc, now)
 	tomorrow := dayHours(fc, now.AddDate(0, 0, 1))
+	found := false
 	for _, h := range today {
 		if h.Time.Hour() == now.Hour() {
+			found = true
 			add("now", fmt.Sprintf("%s (feels %s), %s", temp(h.Temp), temp(h.Feels), wmoCondition(h.Code)))
 		}
+	}
+	if !found {
+		return nil, fmt.Errorf("forecast has no entry for today's current hour (stale or shifted dates)")
 	}
 	if d, ok := dayOf(fc, now); ok && len(today) > 0 {
 		add("today", fmt.Sprintf("min %s, max %s, wind max %s, gusts max %s", temp(d.Min), temp(d.Max),
 			kmh(maxOf(today, func(h openmeteo.Hour) float64 { return h.Wind })),
 			kmh(maxOf(today, func(h openmeteo.Hour) float64 { return h.Gust }))))
 	}
-	add("rain home", rainWindows(today, now, cfg.RainMin))
+	add("rain "+place, rainWindows(today, now, cfg.RainMin))
 	if d, ok := dayOf(fc, now.AddDate(0, 0, 1)); ok && len(tomorrow) > 0 {
 		v := fmt.Sprintf("min %s, max %s, rain p %s, %s, wind max %s, gusts max %s", temp(d.Min), temp(d.Max),
-			pct(maxOf(tomorrow, func(h openmeteo.Hour) float64 { return h.PrecipProb })),
+			probText(tomorrow),
 			mm(sumOf(tomorrow, func(h openmeteo.Hour) float64 { return h.Precip })),
 			kmh(maxOf(tomorrow, func(h openmeteo.Hour) float64 { return h.Wind })),
 			kmh(maxOf(tomorrow, func(h openmeteo.Hour) float64 { return h.Gust })))
@@ -290,12 +332,13 @@ func homeFacts(fc *openmeteo.Forecast, now time.Time, cfg *WeatherConfig) []brie
 		}
 		add("sun", v)
 	}
-	return out
+	return out, nil
 }
 
 // rainWindows lists runs of consecutive hours, from now's hour, whose rain probability is at least min.
 func rainWindows(today []openmeteo.Hour, now time.Time, min float64) string {
 	var wins []string
+	unknown := 0
 	var run []openmeteo.Hour
 	flush := func() {
 		if len(run) == 0 {
@@ -303,22 +346,29 @@ func rainWindows(today []openmeteo.Hour, now time.Time, min float64) string {
 		}
 		end := run[len(run)-1].Time.Add(time.Hour)
 		wins = append(wins, fmt.Sprintf("%s-%s (p %s, %s)", run[0].Time.Format("15:04"), end.Format("15:04"),
-			pct(maxOf(run, func(h openmeteo.Hour) float64 { return h.PrecipProb })),
+			probText(run),
 			mm(sumOf(run, func(h openmeteo.Hour) float64 { return h.Precip }))))
 		run = nil
 	}
 	for _, h := range today {
-		if h.Time.Hour() < now.Hour() || h.PrecipProb < min {
+		if h.Time.Hour() >= now.Hour() && h.ProbUnknown {
+			unknown++
+		}
+		if h.Time.Hour() < now.Hour() || h.ProbUnknown || h.PrecipProb < min {
 			flush()
 			continue
 		}
 		run = append(run, h)
 	}
 	flush()
-	if len(wins) == 0 {
-		return "none"
+	out := "none"
+	if len(wins) > 0 {
+		out = strings.Join(wins, "; ")
 	}
-	return strings.Join(wins, "; ")
+	if unknown > 0 {
+		out += fmt.Sprintf("; p unknown for %d h", unknown)
+	}
+	return out
 }
 
 // slotText summarises the hours overlapping [from, to) today.
@@ -338,7 +388,7 @@ func slotText(fc *openmeteo.Forecast, now time.Time, s WeatherSlot) (string, err
 	v := fmt.Sprintf("min %s, feels min %s, rain p %s, %s, gusts %s",
 		temp(minOf(hs, func(h openmeteo.Hour) float64 { return h.Temp })),
 		temp(minOf(hs, func(h openmeteo.Hour) float64 { return h.Feels })),
-		pct(maxOf(hs, func(h openmeteo.Hour) float64 { return h.PrecipProb })),
+		probText(hs),
 		mm(sumOf(hs, func(h openmeteo.Hour) float64 { return h.Precip })),
 		kmh(maxOf(hs, func(h openmeteo.Hour) float64 { return h.Gust })))
 	if s.Label != "" {

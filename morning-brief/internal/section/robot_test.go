@@ -53,7 +53,7 @@ func robotRun(t *testing.T, mod map[string]string, now time.Time, cfg *RobotConf
 	return collect(t, "robot", env, cfg)
 }
 
-func at(s string) time.Time {
+func robotAt(s string) time.Time {
 	t, err := time.Parse(time.RFC3339, s)
 	if err != nil {
 		panic(err)
@@ -63,8 +63,8 @@ func at(s string) time.Time {
 
 func TestRobotReminderAtThreeDays(t *testing.T) {
 	mod := map[string]string{"sensor.robot_end": "2026-11-22T07:15:00+01:00"}
-	want(t, robotRun(t, mod, at("2026-11-25T07:14:00+01:00"), robotCfg()), "reminder", "no")
-	r := robotRun(t, mod, at("2026-11-25T07:15:00+01:00"), robotCfg())
+	want(t, robotRun(t, mod, robotAt("2026-11-25T07:14:00+01:00"), robotCfg()), "reminder", "no")
+	r := robotRun(t, mod, robotAt("2026-11-25T07:15:00+01:00"), robotCfg())
 	want(t, r, "reminder", "yes (3.0 days)")
 	if r.Status != brief.StatusReport {
 		t.Errorf("status %s", r.Status)

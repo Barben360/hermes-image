@@ -1,0 +1,37 @@
+{
+  "energy_sources": [
+    {
+      "type": "grid",
+      "flow_from": [
+        {"stat_energy_from": "sensor.meter_base", "stat_cost": "sensor.meter_base_cost", "entity_energy_price": null, "number_energy_price": null},
+        {"stat_energy_from": "sensor.meter_offpeak", "stat_cost": "sensor.meter_offpeak_cost", "entity_energy_price": null, "number_energy_price": null}
+      ],
+      "flow_to": [],
+      "cost_adjustment_day": 0
+    },
+    {
+      "type": "grid",
+      "flow_from": [
+        {"stat_energy_from": "sensor.elec_sub_zero_energy", "stat_cost": "sensor.elec_sub_cumul", "entity_energy_price": null, "number_energy_price": null}
+      ],
+      "flow_to": [],
+      "cost_adjustment_day": 0
+    },
+    {"type": "solar", "stat_energy_from": "sensor.roof_energy"},
+    {
+      "type": "gas",
+      "stat_energy_from": "sensor.gas_filtered",
+      "stat_cost": null,
+      "entity_energy_price": null,
+      "number_energy_price": 0.1789
+    },
+    {
+      "type": "gas",
+      "stat_energy_from": "sensor.gas_sub_zero_energy",
+      "stat_cost": "sensor.gas_sub_cumul",
+      "entity_energy_price": null,
+      "number_energy_price": null
+    }
+  ],
+  "device_consumption": []
+}

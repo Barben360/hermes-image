@@ -158,7 +158,7 @@ type FlowFrom struct {
 // EnergySource is one entry of energy/get_prefs' energy_sources; which fields are set depends on Type.
 type EnergySource struct {
 	Type           string     `json:"type"`
-	FlowFrom       []FlowFrom `json:"flow_from"`
+	FlowFrom       []FlowFrom `json:"flow_from"` // older HA: grid sources nested here; newer HA: flat, like gas
 	StatEnergyFrom string     `json:"stat_energy_from"`
 	StatCost       *string    `json:"stat_cost"`
 }

@@ -25,6 +25,8 @@ type fakeHA struct {
 	mu       sync.Mutex
 	authFail bool
 	emptyAns bool                          // statistics_during_period answers {}
+	prefs    string                        // fixture file, default energy-prefs.json
+	rawPrefs string                        // inline prefs JSON, overrides prefs
 	now      time.Time                     // zero = the default fake clock
 	stats    map[string]map[string]float64 // stat id -> "2006-01-02" -> change
 	requests []map[string]any              // statistics_during_period requests
@@ -40,7 +42,14 @@ func readFixture(t *testing.T, name string) json.RawMessage {
 }
 
 func (f *fakeHA) serve(t *testing.T, loc *time.Location) *httptest.Server {
-	prefs, info := readFixture(t, "energy-prefs.json"), readFixture(t, "energy-info.json")
+	file := f.prefs
+	if file == "" {
+		file = "energy-prefs.json"
+	}
+	prefs, info := readFixture(t, file), readFixture(t, "energy-info.json")
+	if f.rawPrefs != "" {
+		prefs = json.RawMessage(f.rawPrefs)
+	}
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := websocket.Accept(w, r, nil)
 		if err != nil {
@@ -380,5 +389,31 @@ func TestEnergyAcrossDSTChange(t *testing.T) {
 	req := fk.requests[0]
 	if req["start_time"] != "2026-10-15T22:00:00Z" || req["end_time"] != "2026-10-25T23:00:00Z" {
 		t.Fatalf("window %v .. %v", req["start_time"], req["end_time"])
+	}
+}
+
+func TestEnergyFlowFromShape(t *testing.T) {
+	r, _ := runEnergy(t, &fakeHA{prefs: "energy-prefs-flow-from.json"})
+	if f, _ := fact(r, "electricity yesterday"); f.Value != "14.0 kWh, 3.08 €" {
+		t.Fatalf("yesterday %q\n%s", f.Value, dump(r))
+	}
+	if _, ok := fact(r, "gas latest complete day 2026-11-23"); !ok {
+		t.Fatalf("no gas\n%s", dump(r))
+	}
+}
+
+func TestEnergyOddGridShapeIsVisible(t *testing.T) {
+	raw := `{"energy_sources":[{"type":"grid","something_new":{"x":1}},{"type":"gas","stat_energy_from":"sensor.gas_filtered"}]}`
+	r, _ := runEnergy(t, &fakeHA{rawPrefs: raw})
+	if f, ok := fact(r, "electricity"); !ok || !strings.HasPrefix(f.Value, "no data") {
+		t.Fatalf("electricity silently dropped\n%s", dump(r))
+	}
+	if _, ok := fact(r, "gas latest complete day 2026-11-23"); !ok {
+		t.Fatalf("gas lost\n%s", dump(r))
+	}
+	raw = `{"energy_sources":[{"type":"gas"}]}`
+	r, _ = runEnergy(t, &fakeHA{rawPrefs: raw})
+	if f, ok := fact(r, "gas"); !ok || !strings.HasPrefix(f.Value, "no data") {
+		t.Fatalf("gas silently dropped\n%s", dump(r))
 	}
 }

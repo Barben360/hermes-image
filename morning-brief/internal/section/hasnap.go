@@ -81,3 +81,13 @@ func inList(list []string, s string) bool {
 
 // matchGlob wraps path.Match so a config can be checked for malformed patterns.
 func matchGlob(pattern, s string) (bool, error) { return path.Match(pattern, s) }
+
+const maxItems = 20
+
+// capItems keeps the first maxItems items and says how many were left out.
+func capItems(res *brief.Result) {
+	if n := len(res.Items) - maxItems; n > 0 {
+		res.Items = res.Items[:maxItems]
+		res.Facts = append(res.Facts, brief.Fact{Key: "more", Value: fmt.Sprintf("+%d more", n)})
+	}
+}

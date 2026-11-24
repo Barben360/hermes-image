@@ -127,8 +127,9 @@ func TestSensorsIncludeExclude(t *testing.T) {
 	}
 	c = sensorsCfg()
 	c.Include = []string{"sensor.other_*"}
-	if r := collect(t, "sensors", env, c); len(r.Items) != 0 {
-		t.Errorf("sensor outside include listed")
+	r := collect(t, "sensors", env, c)
+	if r.Status != brief.StatusError || !strings.Contains(r.Err, "sensor.other_*") {
+		t.Errorf("zero-match include: %s %q", r.Status, r.Err)
 	}
 }
 
@@ -171,4 +172,48 @@ func TestSensorsValidate(t *testing.T) {
 	if c.Validate() == nil {
 		t.Error("bad glob accepted")
 	}
+}
+
+func TestSensorsExactBoundary(t *testing.T) {
+	env := haEnv(nil, nil)
+	for age, wantN := range map[time.Duration]int{24 * time.Hour: 0, 24*time.Hour + time.Second: 1} {
+		env.HA = func(ctx context.Context) (*ha.Snapshot, error) { return ageSnap(env, "20", age, nil), nil }
+		if r := collect(t, "sensors", env, sensorsCfg()); len(r.Items) != wantN {
+			t.Errorf("age %s: %d items", age, len(r.Items))
+		}
+	}
+}
+
+func TestSensorsReportBeforeRestartNotFlaggedByReplayClause(t *testing.T) {
+	env := haEnv(nil, nil)
+	env.HA = func(ctx context.Context) (*ha.Snapshot, error) {
+		snap := ageSnap(env, "20", 31*time.Hour, nil) // reported 1 h before HA's start (30 h ago), within 24 h? no: 31 h
+		st := snap.ByID["sensor.room_x"]
+		st.LastReported = env.Now.Add(-time.Hour) // HA start 30 h ago: report is after; shift start instead
+		snap.ByID["sun.sun"] = ha.State{EntityID: "sun.sun", State: "x", LastChanged: env.Now.Add(-5 * time.Hour)}
+		st.LastReported = env.Now.Add(-5*time.Hour - time.Minute) // 1 min BEFORE the start
+		st.LastChanged = env.Now.Add(-time.Hour)
+		snap.ByID["sensor.room_x"] = st
+		return snap, nil
+	}
+	if r := collect(t, "sensors", env, sensorsCfg()); len(r.Items) != 0 {
+		t.Errorf("flagged: %s", sensorNames(r))
+	}
+}
+
+func TestSensorsCapsList(t *testing.T) {
+	env := haEnv(nil, nil)
+	env.HA = func(ctx context.Context) (*ha.Snapshot, error) {
+		snap := ageSnap(env, "unknown", time.Minute, nil)
+		for i := 0; i < 24; i++ {
+			id := "sensor.room_" + string(rune('a'+i))
+			snap.ByID[id] = ha.State{EntityID: id, State: "unknown", Attributes: map[string]any{}}
+		}
+		return snap, nil
+	}
+	r := collect(t, "sensors", env, sensorsCfg())
+	if len(r.Items) != 20 {
+		t.Errorf("%d items", len(r.Items))
+	}
+	want(t, r, "more", "+4 more")
 }

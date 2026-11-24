@@ -130,3 +130,35 @@ func TestHomeValidate(t *testing.T) {
 		t.Error("bad glob accepted")
 	}
 }
+
+func TestHomeShoppingFailureWithoutUpdatesIsAnError(t *testing.T) {
+	env := homeEnv(t, map[string]string{"update.one": "off"}, nil, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(500) })
+	c := newHomeConfig()
+	c.ShoppingList = "todo.list"
+	r := collect(t, "home", env, c)
+	if r.Status != brief.StatusError || !strings.Contains(r.Err, "HTTP 500") {
+		t.Errorf("%s %q", r.Status, r.Err)
+	}
+}
+
+func TestHomeCapsLists(t *testing.T) {
+	env := homeEnv(t, map[string]string{"todo.list": "25"}, nil, func(w http.ResponseWriter, r *http.Request) {
+		var b strings.Builder
+		b.WriteString(`{"service_response":{"todo.list":{"items":[`)
+		for i := 0; i < 25; i++ {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			b.WriteString(`{"summary":"item"}`)
+		}
+		b.WriteString(`]}}}`)
+		w.Write([]byte(b.String()))
+	})
+	c := newHomeConfig()
+	c.ShoppingList = "todo.list"
+	r := collect(t, "home", env, c)
+	if len(r.Items) != 20 {
+		t.Errorf("%d items", len(r.Items))
+	}
+	want(t, r, "more", "+5 more")
+}

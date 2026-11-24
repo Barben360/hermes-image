@@ -90,6 +90,19 @@ func collectSensors(ctx context.Context, env *brief.Env, sc brief.SectionConfig)
 		res.Status, res.Err = brief.StatusError, err.Error()
 		return res
 	}
+	for _, p := range cfg.Include {
+		found := false
+		for id := range snap.ByID {
+			if ok, _ := matchGlob(p, id); ok {
+				found = true
+				break
+			}
+		}
+		if !found {
+			res.Status, res.Err = brief.StatusError, fmt.Sprintf("sensors.include %q matches no entity in Home Assistant", p)
+			return res
+		}
+	}
 	start := restartAt(snap)
 	var ids []string
 	for id := range snap.ByID {
@@ -111,7 +124,7 @@ func collectSensors(ctx context.Context, env *brief.Env, sc brief.SectionConfig)
 			if !heard.IsZero() {
 				why = "no data since " + stamp(heard, env.Loc)
 			}
-		case !start.IsZero() && heard.Sub(start) <= restartReplayWindow && env.Now.Sub(start) >= restartSilence:
+		case !start.IsZero() && heard.Sub(start) >= 0 && heard.Sub(start) <= restartReplayWindow && env.Now.Sub(start) >= restartSilence:
 			why = "no data since " + stamp(start, env.Loc) + " (only the Home Assistant restart)"
 		}
 		if why == "" {
@@ -121,6 +134,7 @@ func collectSensors(ctx context.Context, env *brief.Env, sc brief.SectionConfig)
 			brief.Untrusted("sensor", entityName(st)), {Key: "status", Value: why},
 		}})
 	}
+	capItems(&res)
 	res.Status = brief.StatusOK
 	if len(res.Items) > 0 {
 		res.Status = brief.StatusReport

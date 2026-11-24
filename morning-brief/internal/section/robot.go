@@ -61,7 +61,8 @@ func collectRobot(ctx context.Context, env *brief.Env, sc brief.SectionConfig) b
 		return res
 	}
 	if t, perr := time.Parse(time.RFC3339, end.State); perr != nil {
-		add("last_clean", "no data")
+		add("last_clean", "unknown — reminder")
+		problem = true
 	} else {
 		add("last_clean", stamp(t, env.Loc))
 		days := env.Now.Sub(t).Hours() / 24
@@ -88,7 +89,12 @@ func collectRobot(ctx context.Context, env *brief.Env, sc brief.SectionConfig) b
 			res.Status, res.Err = brief.StatusError, err.Error()
 			return res
 		}
-		if h, ok := number(st); ok && h <= 0 {
+		h, ok := number(st)
+		switch {
+		case !ok:
+			res.Facts = append(res.Facts, brief.Untrusted("part", entityName(st)+": no data"))
+			problem = true
+		case h <= 0:
 			worn = append(worn, entityName(st))
 		}
 	}
@@ -110,7 +116,7 @@ func collectRobot(ctx context.Context, env *brief.Env, sc brief.SectionConfig) b
 			add(key, "no data")
 			problem = true
 		case st.State != fine:
-			add(key, st.State)
+			add(key, brief.Sanitize(st.State))
 			problem = true
 		}
 		return nil
@@ -129,7 +135,11 @@ func collectRobot(ctx context.Context, env *brief.Env, sc brief.SectionConfig) b
 			res.Status, res.Err = brief.StatusError, err.Error()
 			return res
 		}
-		if st.State == "on" {
+		switch {
+		case unavailable(st.State):
+			res.Facts = append(res.Facts, brief.Untrusted("water_tank", entityName(st)+": no data"))
+			problem = true
+		case st.State == "on":
 			res.Facts = append(res.Facts, brief.Untrusted("water_tank", entityName(st)))
 			problem = true
 		}

@@ -86,7 +86,7 @@ func collectPetFeeder(ctx context.Context, env *brief.Env, sc brief.SectionConfi
 		case unavailable(st):
 			add(key, "no data")
 		case !inList(ok, st):
-			add(key, st)
+			add(key, brief.Sanitize(st))
 		}
 	}
 	check("food", food.State, cfg.FoodOKStates)

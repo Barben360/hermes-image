@@ -62,12 +62,17 @@ func collectHome(ctx context.Context, env *brief.Env, sc brief.SectionConfig) br
 	if cfg.ShoppingList != "" {
 		items, err := shoppingItems(ctx, env, cfg.ShoppingList)
 		if err != nil {
+			if len(res.Items) == 0 {
+				res.Status, res.Err = brief.StatusError, "shopping list: "+err.Error()
+				return res
+			}
 			res.Facts = append(res.Facts, brief.Fact{Key: "shopping_list", Value: "unavailable (" + err.Error() + ")"})
 		}
 		for _, s := range items {
 			res.Items = append(res.Items, brief.Item{Facts: []brief.Fact{brief.Untrusted("shopping", s)}})
 		}
 	}
+	capItems(&res)
 	res.Status = brief.StatusOK
 	if len(res.Items) > 0 {
 		res.Status = brief.StatusReport

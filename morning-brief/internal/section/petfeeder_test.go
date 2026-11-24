@@ -101,3 +101,12 @@ func TestPetFeederMissingEntity(t *testing.T) {
 		t.Errorf("%s %q", r.Status, r.Err)
 	}
 }
+
+func TestPetFeederExactBoundary(t *testing.T) {
+	// now 2026-11-25 07:15; exactly 26 h ago is fine, one second more is not
+	if r := feederRun(t, map[string]string{"event.feeder_feedsuccess": "2026-11-24T05:15:00+01:00"}); len(r.Facts) != 0 {
+		t.Errorf("26 h reported: %s", dump(r))
+	}
+	r := feederRun(t, map[string]string{"event.feeder_feedsuccess": "2026-11-24T05:14:59+01:00"})
+	want(t, r, "feed", "no successful feed since 2026-11-24 05:14")
+}

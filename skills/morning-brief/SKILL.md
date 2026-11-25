@@ -39,7 +39,9 @@ already computed.
 ## Writing the message
 
 - Only sections with something to say. Never a line saying all is well.
-- One line per topic, opening emoji from this set and no other:
+- One line per topic, a blank line between two topics (one paragraph each: a single
+  block is too dense on a phone). No title or sign-off: the message starts with the `☀️`
+  line. Opening emoji from this set and no other:
   `☀️` date (first line, e.g. `☀️ Mercredi 25 novembre`), `🧥` dress, `📅` calendar,
   `🔋` car, `📬` mail, `🚨` alerts, `🐙` GitHub, `🐞` Bugsink, `🛠️` house and upkeep
   (robot, sensors, pet feeder, updates, shopping list, energy, expiries, DeepSeek balance),
@@ -107,7 +109,7 @@ All changes go through the program, as hermes, from a shell in the container. It
 - `morning-brief`: `15 7 * * *` Europe/Paris, agent mode, `--script morning-brief/run.sh`,
   `--skill morning-brief`, `--catch-up on`, `--reasoning-effort low`, delivered (and failures
   too) to `💬 Général` (the tech-radar job's room: read its id from that job's record), per-job
-  `enabled_toolsets: []` and `attach_to_session: true`. Its prompt is exactly
+  `enabled_toolsets: []` and `attach_to_session: false`. Its prompt is exactly
   `job-prompt.txt` next to this file (the smoke test scanned that text with this skill).
 - `morning-brief-watch`: `45 7 * * *` Europe/Paris, `--no-agent`,
   `--script morning-brief/watch.sh`, same room: one line when today's brief was not
@@ -116,9 +118,14 @@ All changes go through the program, as hermes, from a shell in the container. It
   `$HERMES_HOME/cron/jobs.json`. The watcher counts a run before 07:00 local as not the
   morning's: moving the brief before 07:00 also needs `--after HH:MM` in `watch.sh` (a
   hermes-image PR, see below). Keep `enabled_toolsets: []` (without it the run gets every
-  cron tool while it reads third-party text) and `attach_to_session: true` (without it the
-  room's session lacks the brief, so follow-ups like "lance le robot" lose context). Set
-  both through the `cronjob` tool (`cronjob_manage`); the CLI has no flag for them.
+  cron tool while it reads third-party text) and `attach_to_session: false` (on Matrix,
+  `true` opens a thread: a `Hermes — morning-brief` root message, the brief as its reply;
+  the owner wants one message). Set both through the `cronjob` tool (`cronjob_manage`); the
+  CLI has no flag for them. Hermes's `cron.wrap_response: false` (user config) drops the
+  `Cronjob Response` header and footer of every cron message; keep it.
+- Follow-ups: the brief is not in the room's session. When the owner asks about it
+  ("lance le robot", "et la voiture ?"), run `morning-brief run --only <section>` for that
+  section's data, then act.
 - Never `hermes cron run` from a shell: it logs into Matrix and cuts the gateway's token.
   Test with `morning-brief run`.
 

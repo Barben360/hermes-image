@@ -19,7 +19,7 @@ import (
 func init() {
 	brief.Register(brief.Section{
 		Name:        "calendar",
-		Description: "today's and tomorrow's events from pcb (title, time, location), public holidays as day context; an error when pcb is not synced",
+		Description: "today's and tomorrow's events from pcb (title, time, location, source calendar and its type), public holidays as day context; an error when pcb is not synced",
 		ThirdParty:  true,
 		Credentials: []string{"pcb_token"},
 		Default:     func() brief.SectionConfig { return defaultCalendarConfig() },
@@ -265,6 +265,7 @@ func collectCalendar(ctx context.Context, env *brief.Env, sc brief.SectionConfig
 		allDay     bool
 		start      time.Time
 		title, loc string
+		cal, typ   string // source calendar's name (untrusted) and pcb type
 		when       string
 	}
 	perDay := make([][]line, cfg.Days)
@@ -292,7 +293,8 @@ func collectCalendar(ctx context.Context, env *brief.Env, sc brief.SectionConfig
 					holidays[i] = append(holidays[i], e.Untrusted.Summary)
 					continue
 				}
-				l := line{allDay: e.AllDay, start: s, title: e.Untrusted.Summary, loc: e.Untrusted.Location}
+				l := line{allDay: e.AllDay, start: s, title: e.Untrusted.Summary, loc: e.Untrusted.Location,
+					cal: names[e.CalendarID], typ: e.CalendarType}
 				l.when = "all-day"
 				if !e.AllDay {
 					l.when = s.Format("15:04") + "-" + en.Format("15:04")
@@ -334,6 +336,10 @@ func collectCalendar(ctx context.Context, env *brief.Env, sc brief.SectionConfig
 			if strings.TrimSpace(l.loc) != "" {
 				facts = append(facts, brief.Untrusted("location", l.loc))
 			}
+			if strings.TrimSpace(l.cal) != "" {
+				facts = append(facts, brief.Untrusted("calendar", l.cal))
+			}
+			facts = append(facts, brief.Fact{Key: "calendar_type", Value: l.typ})
 			res.Items = append(res.Items, brief.Item{Facts: facts})
 		}
 	}

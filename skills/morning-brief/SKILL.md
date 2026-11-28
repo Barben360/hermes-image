@@ -52,7 +52,9 @@ already computed.
 - Dress: from the slots' feels-like temperature, gusts and rain probability; rain in a slot
   counts at 50 % or more. Say what to wear and when to take an umbrella, not the forecast.
 - Calendar: times and titles, all-day events first, `Demain :` for tomorrow; holidays as
-  context.
+  context. Each event carries its source `calendar` (name) and `calendar_type` (`normal`,
+  `subscribed`): use them to group events (e.g. a subscribed sports calendar), don't print
+  them.
 - Car: every day, battery and range. Add when the data dates from (its `as_of`) when it is
   not from this morning, e.g. `(données d'hier 18:49)`. `warning: yes` → start with `⚠️`
   and say it is below the threshold; `warning: unknown` → say the battery level is unknown.
